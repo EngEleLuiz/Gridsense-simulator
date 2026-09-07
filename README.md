@@ -11,20 +11,20 @@ required at any phase.
 
 ## Phases
 
-- **Phase 1 — Simulation engine** (`simulator/`): loads an IEEE test
+- **Phase 1 - Simulation engine** (`simulator/`): loads an IEEE test
   power network, applies synthetic load/renewable profiles and
   contingencies, runs power flow, and emits telemetry. See
   [`simulator/README.md`](simulator/README.md).
-- **Phase 2 — Streaming & Bronze ingestion** (this README): a local
+- **Phase 2 - Streaming & Bronze ingestion** (this README): a local
   Kafka broker receives telemetry from the simulator, and a Python
   consumer lands it as a partitioned Parquet "Bronze" layer on disk.
-- **Phase 3 (planned)** — dbt models (Silver/Gold) + TimescaleDB.
-- **Phase 4 (planned)** — Grafana dashboards + FastAPI read API.
-- **Phase 5 (planned)** — Real datasets (ONS, NREL NSRDB/WIND Toolkit)
+- **Phase 3 (planned)** - dbt models (Silver/Gold) + TimescaleDB.
+- **Phase 4 (planned)** - Grafana dashboards + FastAPI read API.
+- **Phase 5 (planned)** - Real datasets (ONS, NREL NSRDB/WIND Toolkit)
   replacing synthetic profiles; ML models (forecasting, anomaly
   detection).
 
-## Phase 2 — Architecture
+## Phase 2 - Architecture
 
 ```
  simulator (Python)                bronze_consumer (Python)
@@ -35,24 +35,24 @@ required at any phase.
                                                │
                                                ▼
                                     data/bronze/topic=.../date=.../*.parquet
-                                    (queryable directly with DuckDB —
+                                    (queryable directly with DuckDB -
                                      no database server needed)
 ```
 
 Kafka topics used:
-- `grid.telemetry.raw` — one record per simulated power-flow step.
-- `grid.events.alerts` — contingencies and non-convergence events.
+- `grid.telemetry.raw` - one record per simulated power-flow step.
+- `grid.events.alerts` - contingencies and non-convergence events.
 
 The Bronze layer follows a **schema-on-read** pattern: each Parquet
 row stores the raw JSON payload untouched, plus ingestion metadata
 (topic, Kafka partition/offset, ingestion timestamp). Typed parsing
 and data-quality checks are deferred to the Silver layer (dbt),
-which is a later phase — this keeps the ingestion path simple and
+which is a later phase  this keeps the ingestion path simple and
 lossless.
 
 ## Requirements
 
-- Docker + Docker Compose (for Kafka — free, runs locally)
+- Docker + Docker Compose (for Kafka  free, runs locally)
 - Python 3.10+
 
 ## Setup
@@ -72,7 +72,7 @@ pip install -r ingestion/requirements.txt
 
 ## Run the local pipeline end to end
 
-Terminal 1 — produce telemetry into Kafka:
+Terminal 1 - produce telemetry into Kafka:
 
 ```bash
 make produce
@@ -81,7 +81,7 @@ make produce
 #     --kafka --kafka-bootstrap-servers localhost:9092 -v
 ```
 
-Terminal 2 — consume from Kafka and land it as Parquet:
+Terminal 2 - consume from Kafka and land it as Parquet:
 
 ```bash
 make consume-bronze
@@ -90,12 +90,12 @@ make consume-bronze
 #     --output-dir data/bronze -v
 ```
 
-Stop the consumer with Ctrl+C once the producer finishes — it flushes
+Stop the consumer with Ctrl+C once the producer finishes  it flushes
 any buffered records before exiting, so nothing is lost.
 
 ## Verify the Bronze layer
 
-No database server needed — query the Parquet files directly with
+No database server needed  query the Parquet files directly with
 [DuckDB](https://duckdb.org/) (free, embedded, zero setup):
 
 ```bash
