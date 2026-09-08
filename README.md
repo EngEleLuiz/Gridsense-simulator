@@ -11,13 +11,17 @@ required at any phase.
 
 ## Phases
 
-- **Phase 1 — Simulation engine** (`simulator/`): loads an IEEE test
+- **✓ Phase 1 — Simulation engine** (`simulator/`): loads an IEEE test
   power network, applies synthetic load/renewable profiles and
   contingencies, runs power flow, and emits telemetry. See
   [`simulator/README.md`](simulator/README.md).
-- **Phase 2 — Streaming & Bronze ingestion** (this README): a local
+  
+- **✓ Phase 2 — Streaming & Bronze ingestion** (ready to run): a local
   Kafka broker receives telemetry from the simulator, and a Python
   consumer lands it as a partitioned Parquet "Bronze" layer on disk.
+  See [`PHASE2_OVERVIEW.md`](PHASE2_OVERVIEW.md) for complete guide or
+  [`PHASE2_QUICKSTART.md`](PHASE2_QUICKSTART.md) for TL;DR.
+  
 - **Phase 3 (planned)** — dbt models (Silver/Gold) + TimescaleDB.
 - **Phase 4 (planned)** — Grafana dashboards + FastAPI read API.
 - **Phase 5 (planned)** — Real datasets (ONS, NREL NSRDB/WIND Toolkit)
@@ -55,43 +59,75 @@ lossless.
 - Docker + Docker Compose (for Kafka — free, runs locally)
 - Python 3.10+
 
-## Setup
+## Quick Start
+
+### Phase 2 — Automated Setup (Windows PowerShell)
+
+```powershell
+# One-line setup (installs deps + starts Kafka)
+powershell -ExecutionPolicy Bypass -File scripts/setup_phase2.ps1
+```
+
+### Or Step-by-Step
 
 ```bash
-# 1. Start local Kafka (KRaft mode, single broker) + Kafka UI
-make up
+# 1. Create Python virtual environment
+python -m venv .venv
+source .venv/bin/activate   # on Windows: .venv\Scripts\Activate.ps1
+
+# 2. Install dependencies
+cd simulator && pip install -e ".[dev,kafka]" && cd ..
+pip install -r ingestion/requirements.txt
+
+# 3. Create data directories
+mkdir -p data/bronze data/raw
+
+# 4. Start local Kafka (KRaft mode, single broker) + Kafka UI
+docker compose up -d
 # Kafka:    localhost:9092
 # Kafka UI: http://localhost:8080  (browse topics/messages visually)
-
-# 2. Install the simulator with Kafka support
-cd simulator && pip install -e ".[dev,kafka]" && cd ..
-
-# 3. Install the ingestion consumer's dependencies
-pip install -r ingestion/requirements.txt
 ```
 
-## Run the local pipeline end to end
+## Run Phase 2 End-to-End
 
-Terminal 1 — produce telemetry into Kafka:
+### Using Make (Linux/Mac/Git Bash)
 
 ```bash
-make produce
-# equivalent to:
-# cd simulator && python -m gridsense_sim.cli --network case14 --steps 200 \
-#     --kafka --kafka-bootstrap-servers localhost:9092 -v
+make up                    # Start Kafka
+make produce               # Terminal 1: Simulator → Kafka
+make consume-bronze        # Terminal 2: Kafka → Parquet
+make query-bronze          # Terminal 3: Verify with DuckDB
+make down                  # Stop everything
 ```
 
-Terminal 2 — consume from Kafka and land it as Parquet:
+### Manual (Windows PowerShell / Any OS)
 
-```bash
-make consume-bronze
-# equivalent to:
-# python ingestion/bronze_consumer.py --bootstrap-servers localhost:9092 \
-#     --output-dir data/bronze -v
+**Terminal 1 — Produce telemetry into Kafka:**
+
+```powershell
+python -m gridsense_sim.cli \
+  --network case14 \
+  --steps 200 \
+  --kafka \
+  --kafka-bootstrap-servers localhost:9092 \
+  -v
+```
+
+**Terminal 2 — Consume from Kafka and land it as Parquet:**
+
+```powershell
+python ingestion/bronze_consumer.py \
+  --bootstrap-servers localhost:9092 \
+  --output-dir data/bronze \
+  -v
 ```
 
 Stop the consumer with Ctrl+C once the producer finishes — it flushes
 any buffered records before exiting, so nothing is lost.
+
+**Terminal 3 — View Kafka UI (optional):**
+
+Open browser to http://localhost:8080
 
 ## Verify the Bronze layer
 
