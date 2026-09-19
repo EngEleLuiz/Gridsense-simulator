@@ -39,8 +39,13 @@ def main() -> None:
     parser.add_argument(
         "--network",
         default="case14",
-        choices=["case14", "case39", "case57", "case118"],
-        help="IEEE test network to simulate (default: case14).",
+        choices=["case14", "case39", "case57", "case118", "cigre_lv"],
+        help=(
+            "Network to simulate (default: case14). case14/39/57/118 are "
+            "balanced IEEE transmission test cases; cigre_lv is a 44-bus "
+            "radial low-voltage distribution feeder (CIGRE Task Force "
+            "C6.04.02), suitable for hosting-capacity / DER studies."
+        ),
     )
     parser.add_argument("--steps", type=int, default=100, help="Number of simulation steps to run.")
     parser.add_argument(

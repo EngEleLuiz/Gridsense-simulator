@@ -58,6 +58,27 @@ def test_engine_runs_and_publishes_telemetry() -> None:
     assert first["network"] == "case14"
 
 
+def test_engine_runs_on_cigre_lv_network() -> None:
+    """Phase 5: the engine must run unmodified on a real LV distribution
+    feeder, not just on balanced transmission test cases. cigre_lv has
+    44 buses, standard net.load/net.line tables, and a normal pp.runpp(),
+    so this exercises the same code path as case14 above with a
+    different topology.
+    """
+    config = SimulationConfig(network_name="cigre_lv", total_steps=5, seed=1)
+    publisher = RecordingPublisher()
+    engine = GridSimulationEngine(config, publisher)
+    engine.run()
+
+    telemetry_records = [r for topic, r in publisher.records if topic == "grid.telemetry.raw"]
+    assert len(telemetry_records) == 5
+    assert publisher.closed is True
+
+    first = telemetry_records[0]
+    assert first["network"] == "cigre_lv"
+    assert len(first["bus_voltage_pu"]) == 44
+
+
 def test_engine_raises_on_unsupported_network() -> None:
     config = SimulationConfig(network_name="not_a_real_case", total_steps=1)
     with pytest.raises(ValueError):
