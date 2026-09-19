@@ -11,28 +11,28 @@ required at any phase.
 
 ## Phases
 
-- **✓ Phase 1 — Simulation engine** (`simulator/`): loads an IEEE test
+- **✓ Phase 1 - Simulation engine** (`simulator/`): loads an IEEE test
   power network, applies synthetic load/renewable profiles and
   contingencies, runs power flow, and emits telemetry. See
   [`simulator/README.md`](simulator/README.md).
 
-- **✓ Phase 2 — Streaming & Bronze ingestion** (`ingestion/`): a local
+- **✓ Phase 2 - Streaming & Bronze ingestion** (`ingestion/`): a local
   Kafka broker receives telemetry from the simulator, and a Python
   consumer lands it as a partitioned Parquet "Bronze" layer on disk.
 
-- **✓ Phase 3 — Transform layer** (`transform/`): Bronze Parquet is
+- **✓ Phase 3 - Transform layer** (`transform/`): Bronze Parquet is
   bulk-loaded into TimescaleDB, then a dbt project builds typed,
   unnested Silver fact tables and pre-aggregated Gold marts, backed
   by 23 automated data-quality tests. See
   [`transform/README.md`](transform/README.md).
 
-- **✓ Phase 4 — API & Dashboards** (`api/`, `grafana/`): a FastAPI
+- **✓ Phase 4 - API & Dashboards** (`api/`, `grafana/`): a FastAPI
   read layer serves the Gold marts over HTTP (typed, tested,
   auto-documented), and a pre-provisioned Grafana dashboard
   visualizes them. See [`api/README.md`](api/README.md) and
   [`grafana/README.md`](grafana/README.md).
 
-- **Phase 5 (planned)** — Real datasets (ONS, NREL NSRDB/WIND Toolkit)
+- **Phase 5 (planned)** - Real datasets (ONS, NREL NSRDB/WIND Toolkit)
   replacing synthetic profiles; ML models (forecasting, anomaly
   detection).
 
@@ -60,22 +60,22 @@ simulator            bronze_consumer          load_bronze_to_timescale.py
 ```
 
 Kafka topics used:
-- `grid.telemetry.raw` — one record per simulated power-flow step.
-- `grid.events.alerts` — contingencies and non-convergence events.
+- `grid.telemetry.raw` - one record per simulated power-flow step.
+- `grid.events.alerts` - contingencies and non-convergence events.
 
 The Bronze layer follows a **schema-on-read** pattern: each record
 stores the raw JSON payload untouched, plus ingestion metadata (topic,
 Kafka partition/offset, ingestion timestamp). Typed parsing,
 unnesting, and data-quality checks all happen downstream in the dbt
-transform layer — this keeps ingestion simple and lossless, and means
+transform layer  this keeps ingestion simple and lossless, and means
 a schema change in the simulator only ever touches one staging model.
 The API and Grafana dashboard both read exclusively from the Gold
-layer, never from Bronze/Silver directly — one boundary, one place to
+layer, never from Bronze/Silver directly  one boundary, one place to
 change if the warehouse schema evolves.
 
 ## Requirements
 
-- Docker + Docker Compose (Kafka, TimescaleDB, Grafana — all free, run locally)
+- Docker + Docker Compose (Kafka, TimescaleDB, Grafana  all free, run locally)
 - Python 3.10+
 
 ## Setup
@@ -162,12 +162,12 @@ Open http://localhost:8000/docs for interactive API docs.
 
 **6. View the dashboard:**
 
-Open http://localhost:3000 — the **GridSense Overview** dashboard is
+Open http://localhost:3000 - the **GridSense Overview** dashboard is
 already there, pre-loaded, pointed at the same Gold tables.
 
 ## Verify
 
-**Bronze (Parquet, via DuckDB — no server needed):**
+**Bronze (Parquet, via DuckDB  no server needed):**
 
 ```python
 import duckdb
