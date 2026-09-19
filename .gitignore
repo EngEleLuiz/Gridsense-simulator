@@ -9,3 +9,8 @@ build/
 dist/
 data/bronze/
 data/raw/
+transform/target/
+transform/dbt_packages/
+transform/logs/
+transform/.user.yml
+*.parquet

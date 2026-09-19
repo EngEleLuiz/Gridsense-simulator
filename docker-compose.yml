@@ -54,5 +54,69 @@ services:
       kafka:
         condition: service_healthy
 
+  # TimescaleDB (PostgreSQL + native time-series extension) — the
+  # warehouse target for the dbt project in transform/. Free and
+  # open-source (Apache 2.0 / Timescale License), self-hosted.
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: gridsense-timescaledb
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gridsense
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gridsense"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Grafana — dashboards over the Gold marts. Datasource and the
+  # GridSense Overview dashboard are auto-provisioned from
+  # grafana/provisioning/ and grafana/dashboards/ (no manual
+  # click-through setup needed). Free and open-source, self-hosted.
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: gridsense-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+
+  # Optional: containerized API. Not started by `docker compose up -d`
+  # by default (profile-gated) -- for local dev, running
+  # `uvicorn app.main:app --reload` directly is faster to iterate on.
+  # Opt in with: docker compose --profile api up -d api
+  api:
+    build: ./api
+    container_name: gridsense-api
+    profiles: ["api"]
+    ports:
+      - "8000:8000"
+    environment:
+      TIMESCALE_HOST: timescaledb
+      TIMESCALE_PORT: "5432"
+      TIMESCALE_USER: postgres
+      TIMESCALE_PASSWORD: postgres
+      TIMESCALE_DB: gridsense
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+
 volumes:
   kafka-data:
+  timescale-data:
+  grafana-data:
