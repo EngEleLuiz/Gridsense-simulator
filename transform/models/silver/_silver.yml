@@ -1,0 +1,45 @@
+version: 2
+
+models:
+  - name: fct_bus_voltage
+    description: >
+      One row per bus per simulation step (long/tidy format).
+      is_voltage_violation flags readings outside the ANSI C84.1
+      Range A operational tolerance (0.95-1.05 pu).
+    columns:
+      - name: bus_id
+        tests: [not_null]
+      - name: voltage_pu
+        tests: [not_null]
+      - name: is_voltage_violation
+        tests: [not_null]
+
+  - name: fct_line_loading
+    description: >
+      One row per transmission line per simulation step.
+      is_overloaded flags loading_percent > 100 (over thermal rating).
+    columns:
+      - name: line_id
+        tests: [not_null]
+      - name: loading_percent
+        tests: [not_null]
+
+  - name: fct_gen_power
+    description: "One row per generator per simulation step."
+    columns:
+      - name: gen_id
+        tests: [not_null]
+      - name: power_mw
+        tests: [not_null]
+
+  - name: fct_grid_summary
+    description: >
+      One row per simulation step with system-wide load/generation
+      totals, the instantaneous power balance, and a contingency flag.
+    columns:
+      - name: step
+        tests: [not_null]
+      - name: total_load_mw
+        tests: [not_null]
+      - name: power_balance_mw
+        tests: [not_null]

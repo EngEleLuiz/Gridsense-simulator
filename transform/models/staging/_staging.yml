@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: stg_grid_telemetry
+    description: >
+      One row per simulated power-flow step. Scalar fields (load,
+      generation, step, network, timestamps) are typed; per-bus,
+      per-line, and per-generator readings remain as jsonb, unnested
+      downstream in the Silver layer.
+    columns:
+      - name: step
+        description: "Simulation step index (0-based, monotonically increasing per run)."
+        tests: [not_null]
+      - name: network
+        description: "IEEE test network used for the run, e.g. case14."
+        tests: [not_null]
+      - name: event_timestamp
+        description: "Simulated wall-clock timestamp for this step."
+        tests: [not_null]
+      - name: total_load_mw
+        tests: [not_null]
+      - name: total_generation_mw
+        tests: [not_null]

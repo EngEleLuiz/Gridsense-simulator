@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: mart_voltage_quality_hourly
+    description: >
+      Hourly voltage-quality KPIs per bus: mean/min/max/stddev voltage,
+      and the percentage of readings that violated the ANSI C84.1
+      Range A operational tolerance. Intended for direct consumption
+      by dashboards (Grafana) or ad-hoc quality reports.
+
+  - name: mart_line_loading_hourly
+    description: >
+      Hourly line-loading KPIs per transmission line, including
+      overload event counts and rates. Highlights which lines are
+      chronically stressed vs. lightly loaded.
+
+  - name: mart_grid_kpis_daily
+    description: >
+      Daily system-level KPIs: peak/average/min load, average
+      generation, load factor, and the count of simulation steps with
+      an active contingency.

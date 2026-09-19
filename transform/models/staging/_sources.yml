@@ -1,0 +1,28 @@
+version: 2
+
+sources:
+  - name: bronze
+    schema: bronze
+    description: >
+      Raw Kafka records, landed unmodified as partitioned Parquet by
+      the streaming consumer (Phase 2), then bulk-loaded verbatim into
+      this TimescaleDB table. Schema-on-read: the event payload lives
+      in `raw_value` (jsonb); typed columns only start at the staging
+      layer.
+    tables:
+      - name: raw_events
+        description: "One row per Kafka message, keyed by (topic, kafka_partition, kafka_offset)."
+        columns:
+          - name: topic
+            description: "Kafka topic the message was published to."
+            tests: [not_null]
+          - name: kafka_partition
+            tests: [not_null]
+          - name: kafka_offset
+            tests: [not_null]
+          - name: ingestion_timestamp
+            description: "When the Bronze consumer wrote this row to Parquet."
+            tests: [not_null]
+          - name: raw_value
+            description: "Untouched JSON payload as published by the simulator."
+            tests: [not_null]

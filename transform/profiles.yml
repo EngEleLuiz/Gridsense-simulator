@@ -1,0 +1,12 @@
+gridsense:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('TIMESCALE_HOST', 'localhost') }}"
+      port: "{{ env_var('TIMESCALE_PORT', '5432') | as_number }}"
+      user: "{{ env_var('TIMESCALE_USER', 'postgres') }}"
+      password: "{{ env_var('TIMESCALE_PASSWORD', 'postgres') }}"
+      dbname: "{{ env_var('TIMESCALE_DB', 'gridsense') }}"
+      schema: public
+      threads: 4
