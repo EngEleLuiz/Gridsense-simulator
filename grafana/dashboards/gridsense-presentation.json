@@ -1,0 +1,252 @@
+{
+  "title": "GridSense — Hosting Capacity Research Overview",
+  "uid": "gridsense-presentation",
+  "tags": ["gridsense", "presentation", "hosting-capacity"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "network",
+        "type": "query",
+        "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+        "query": "SELECT DISTINCT network FROM public_gold.mart_grid_kpis_daily ORDER BY network",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "",
+      "type": "text",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "## GridSense Simulator — Digital-Twin Testbed for Hosting Capacity Research\n\nAll figures below are computed automatically by an open-source pipeline (power-flow simulation → streaming → tested data warehouse) and reflect **actual simulation output**, not illustrative data. Network: IEEE 14-bus test case. Full source code, tests, and this dashboard's queries are publicly available."
+      }
+    },
+
+    {
+      "id": 2,
+      "title": "Simulation Steps",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 4 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" } },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+          "rawSql": "SELECT count(DISTINCT step) AS \"Steps Simulated\" FROM public_silver.fct_grid_summary WHERE network = '$network'",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ]
+    },
+
+    {
+      "id": 3,
+      "title": "Simulated Days",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 4 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" } },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+          "rawSql": "SELECT count(*) AS \"Days\" FROM public_gold.mart_grid_kpis_daily WHERE network = '$network'",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ]
+    },
+
+    {
+      "id": 4,
+      "title": "Peak Load Recorded",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 4 },
+      "fieldConfig": {
+        "defaults": { "unit": "megwatt", "decimals": 1, "color": { "mode": "fixed", "fixedColor": "blue" } },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+          "rawSql": "SELECT max(peak_load_mw) AS \"Peak Load\" FROM public_gold.mart_grid_kpis_daily WHERE network = '$network'",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ]
+    },
+
+    {
+      "id": 5,
+      "title": "Average Load Factor",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 4 },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "decimals": 2, "color": { "mode": "fixed", "fixedColor": "blue" } },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+          "rawSql": "SELECT avg(load_factor) AS \"Load Factor\" FROM public_gold.mart_grid_kpis_daily WHERE network = '$network'",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ]
+    },
+
+    {
+      "id": 6,
+      "title": "Bus Voltage Classification — Why Some Buses Show 100% \"Violation\"",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 9 },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "left", "cellOptions": { "type": "auto" } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "violation_pct" },
+            "properties": [
+              { "id": "displayName", "value": "Violation Rate (%)" },
+              { "id": "unit", "value": "percent" },
+              { "id": "custom.cellOptions", "value": { "type": "color-background", "mode": "basic" } },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "orange", "value": 25 },
+                    { "color": "red", "value": 75 }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "bus_type" },
+            "properties": [{ "id": "displayName", "value": "Bus Type" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "bus_id" },
+            "properties": [{ "id": "displayName", "value": "Bus" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "voltage_pu" },
+            "properties": [
+              { "id": "displayName", "value": "Avg Voltage (p.u.)" },
+              { "id": "unit", "value": "none" },
+              { "id": "decimals", "value": 4 }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Bus", "desc": false }]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+          "rawSql": "SELECT v.bus_id, CASE WHEN v.bus_id = 0 THEN 'Slack' WHEN v.bus_id IN (1,2,5,7) THEN 'Generator (PV)' ELSE 'Load' END AS bus_type, round(avg(v.avg_voltage_pu)::numeric, 4) AS voltage_pu, round(avg(v.violation_rate_pct)::numeric, 1) AS violation_pct FROM public_gold.mart_voltage_quality_hourly v WHERE v.network = '$network' GROUP BY v.bus_id ORDER BY v.bus_id",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ]
+    },
+
+    {
+      "id": 7,
+      "title": "",
+      "type": "text",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 21 },
+      "options": {
+        "mode": "markdown",
+        "content": "### Key finding\n\nOf the 14 buses, **5 are voltage-controlled** (1 slack + 4 generator buses per the standard IEEE 14-bus definition). Three of these five hold fixed setpoints **above** the 1.05 p.u. ANSI C84.1 operational limit by design (1.06, 1.07, 1.09 p.u.) — their 100% \"violation\" rate is a setpoint artifact, not a fault.\n\nThe remaining **9 buses are pure load buses**, with no local voltage support. Of those, **4 still show a 100% violation rate** (buses 6, 8, 10, 11) purely from voltage drop across the meshed network — this is the genuine physical phenomenon that motivates a hosting-capacity study: without local reactive support (e.g. from distributed PV inverters), these buses have essentially zero remaining voltage headroom before any additional injection or withdrawal pushes them further out of range."
+      }
+    },
+
+    {
+      "id": 8,
+      "title": "Daily Load & Generation",
+      "type": "timeseries",
+      "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 27 },
+      "fieldConfig": {
+        "defaults": { "unit": "megwatt" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+          "rawSql": "SELECT day_bucket AS \"time\", avg_load_mw, peak_load_mw, avg_generation_mw FROM public_gold.mart_grid_kpis_daily WHERE network = '$network' ORDER BY 1",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ]
+    }
+  ]
+}

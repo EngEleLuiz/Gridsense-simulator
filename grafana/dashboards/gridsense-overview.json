@@ -1,0 +1,157 @@
+{
+  "title": "GridSense Overview",
+  "uid": "gridsense-overview",
+  "tags": ["gridsense", "power-systems"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "",
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "network",
+        "type": "query",
+        "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+        "query": "SELECT DISTINCT network FROM public_gold.mart_grid_kpis_daily ORDER BY network",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Daily Load & Generation",
+      "type": "timeseries",
+      "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "unit": "megwatt" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+          "rawSql": "SELECT day_bucket AS \"time\", avg_load_mw, peak_load_mw, avg_generation_mw FROM public_gold.mart_grid_kpis_daily WHERE network = '$network' ORDER BY 1",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Load Factor (latest day)",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "orange", "value": null },
+              { "color": "green", "value": 0.6 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+          "rawSql": "SELECT load_factor AS \"Load Factor\" FROM public_gold.mart_grid_kpis_daily WHERE network = '$network' ORDER BY day_bucket DESC LIMIT 1",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Voltage Violation Rate by Bus (ANSI C84.1 Range A)",
+      "description": "Percentage of hourly readings outside the 0.95-1.05 p.u. tolerance. High rates on non-slack buses are expected in meshed networks: buses without local voltage support (no generator or compensator) float outside the band based on their position in the mesh. This is a property of the network topology, not a pipeline error.",
+      "type": "bargauge",
+      "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 9 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 25 },
+              { "color": "red", "value": 75 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": [], "fields": "", "values": true }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+          "rawSql": "SELECT 'Bus ' || bus_id::text AS metric, avg(violation_rate_pct) AS value FROM public_gold.mart_voltage_quality_hourly WHERE network = '$network' GROUP BY bus_id ORDER BY bus_id ASC",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Line Overload Events Over Time",
+      "type": "timeseries",
+      "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 9 },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+          "rawSql": "SELECT hour_bucket AS \"time\", sum(n_overload_events) AS overload_events FROM public_gold.mart_line_loading_hourly WHERE network = '$network' GROUP BY hour_bucket ORDER BY 1",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ]
+    }
+  ]
+}
