@@ -160,13 +160,37 @@ class BronzeConsumer:
         signal.signal(signal.SIGINT, _handle_shutdown)
         signal.signal(signal.SIGTERM, _handle_shutdown)
 
+        # Codes that mean "nothing to read right now for this reason",
+        # not "the consumer is broken": PARTITION_EOF is the normal
+        # end of a partition's currently-available messages, and
+        # UNKNOWN_TOPIC_OR_PART shows up when a subscribed topic
+        # hasn't been produced to yet (Kafka's auto-create only fires
+        # on produce, not on subscribe -- e.g. grid.events.alerts
+        # stays nonexistent until a run with contingencies actually
+        # emits an alert). Both are logged once and then tolerated;
+        # anything else still raises, since that likely is a real
+        # broker/connectivity problem.
+        _TOLERATED_ERROR_CODES = {KafkaError._PARTITION_EOF, KafkaError.UNKNOWN_TOPIC_OR_PART}
+        _warned_topics: set[str] = set()
+
         try:
             while self._running:
                 msg = self._consumer.poll(timeout=1.0)
                 if msg is not None:
                     if msg.error():
-                        if msg.error().code() == KafkaError._PARTITION_EOF:
+                        error_code = msg.error().code()
+                        if error_code == KafkaError._PARTITION_EOF:
                             pass
+                        elif error_code == KafkaError.UNKNOWN_TOPIC_OR_PART:
+                            topic = msg.topic() or "<unknown>"
+                            if topic not in _warned_topics:
+                                logger.warning(
+                                    "Topic '%s' does not exist yet (nothing has been "
+                                    "produced to it) -- will keep polling; it appears "
+                                    "automatically once a producer sends to it.",
+                                    topic,
+                                )
+                                _warned_topics.add(topic)
                         else:
                             raise KafkaException(msg.error())
                     else:
