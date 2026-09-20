@@ -15,6 +15,28 @@ reintroduced later.
 Follows Torquato et al. (2018)'s framing: report a distribution
 (p50/p95) rather than a single number, since real-world PV adoption
 is not coordinated.
+
+KNOWN CALIBRATION GAP (documented, not fixed -- deferred to Phase 8):
+`max_pv_mw_per_bus`'s default (0.02 MW) was found, in a first CIGRE LV
+run (Sept/2026), to sit well below the network's actual hosting
+capacity ceiling -- the deterministic method found ~1.57 MW total
+(~0.10 MW/bus average) before its first violation, roughly 5x the
+default sampling ceiling. At the default, 500/500 trials showed zero
+violations, so the resulting p50/p95 only says "nothing breaks within
+this budget" -- it does not locate where the network actually starts
+to break, and is NOT a like-for-like comparison against the
+deterministic/QSTS results in that state.
+
+This is deliberately left uncalibrated here rather than patched with
+a guessed multiplier: the right fix depends on real per-household PV
+sizing data (synthetic per-bus load figures aren't a solid basis for
+choosing a sampling ceiling), which Phase 8 brings in (see
+03-Project-Overview.md sec. 4, item 2/5 datasets). Until then, any
+call to run_monte_carlo should pass a deliberately-chosen
+max_pv_mw_per_bus (e.g. informed by a prior
+find_hosting_capacity_deterministic run on the same network) rather
+than relying on the default for anything meant to be compared against
+the other two methods.
 """
 
 from __future__ import annotations
