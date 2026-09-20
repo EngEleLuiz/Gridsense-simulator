@@ -14,3 +14,4 @@ transform/dbt_packages/
 transform/logs/
 transform/.user.yml
 *.parquet
+data/hosting_capacity/
