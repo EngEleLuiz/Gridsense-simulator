@@ -38,6 +38,13 @@ class ViolationReport:
         """
         if not self.has_violation:
             return None
+        if not self.converged:
+            # Non-convergence is reported as a violation (see
+            # check_violations below) with all three violation dicts
+            # empty -- there's nothing to rank, but "the grid can't
+            # even solve at this penetration" is itself a valid,
+            # reportable binding constraint.
+            return "power_flow_non_convergence"
         candidates: list[tuple[float, str]] = []
         for bus, vm_pu in self.voltage_violations.items():
             candidates.append((abs(vm_pu - 1.0), f"voltage@bus_{bus} ({vm_pu:.4f} pu)"))
