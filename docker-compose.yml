@@ -88,6 +88,12 @@ services:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # Read by grafana/provisioning/datasources/timescaledb.yml via
+      # Grafana's $__env{} provisioning macro, so the TimescaleDB
+      # credential isn't a literal value in a committed file. Same
+      # local dev default as everywhere else in the project.
+      TIMESCALE_USER: postgres
+      TIMESCALE_PASSWORD: postgres
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards
