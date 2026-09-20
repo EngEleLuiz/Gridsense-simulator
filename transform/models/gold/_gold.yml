@@ -4,9 +4,11 @@ models:
   - name: mart_voltage_quality_hourly
     description: >
       Hourly voltage-quality KPIs per bus: mean/min/max/stddev voltage,
-      and the percentage of readings that violated the ANSI C84.1
-      Range A operational tolerance. Intended for direct consumption
-      by dashboards (Grafana) or ad-hoc quality reports.
+      and the percentage of readings that violated the network's own
+      voltage tolerance (see transform/seeds/network_voltage_limits.csv
+      -- ANSI C84.1 Range A for the transmission test cases, +-10%
+      for cigre_lv). Intended for direct consumption by dashboards
+      (Grafana) or ad-hoc quality reports.
 
   - name: mart_line_loading_hourly
     description: >
@@ -19,3 +21,24 @@ models:
       Daily system-level KPIs: peak/average/min load, average
       generation, load factor, and the count of simulation steps with
       an active contingency.
+
+  - name: mart_hosting_capacity
+    description: >
+      Side-by-side comparison of the deterministic, stochastic, and
+      QSTS hosting-capacity methodologies for the same network -- the
+      core scientific comparison the dissertation is built around.
+      total_pv_mw_comparable is the one number meant for naive
+      cross-method comparison; see its column description for the
+      stochastic-calibration caveat before citing it directly.
+    columns:
+      - name: network
+        tests: [not_null]
+      - name: method
+        tests: [not_null]
+      - name: total_pv_mw_comparable
+        description: >
+          deterministic/qsts: total PV at the binding constraint.
+          stochastic: p50 of feasible trials -- NOT yet calibrated to
+          the same ceiling as the other two methods (see
+          stochastic.py's module docstring). Never negative -- see
+          assert_hosting_capacity_non_negative.sql.
