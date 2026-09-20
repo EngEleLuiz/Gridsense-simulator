@@ -21,11 +21,22 @@ from .scenarios import Contingency
 
 logger = logging.getLogger("gridsense_sim.engine")
 
+# NOTE (Phase 5): cigre_lv is a genuine low-voltage distribution feeder
+# (44 buses, radial, 3 trafos), unlike case14/39/57/118 which are balanced
+# transmission networks. It uses the standard net.load / net.line / net.bus
+# tables and a normal pp.runpp(), so no other code in this module changes.
+#
+# ieee_european_lv_asymmetric is intentionally NOT included here: it stores
+# loads in net.asymmetric_load (p_a_mw/p_b_mw/p_c_mw per phase) and requires
+# pp.runpp_3ph() + net.res_bus_3ph instead of the symmetric flow used below.
+# Adding it means rewriting _apply_load_profile/_build_telemetry, not just
+# registering a new network - deferred as its own decision.
 SUPPORTED_NETWORKS = {
     "case14": pn.case14,
     "case39": pn.case39,
     "case57": pn.case57,
     "case118": pn.case118,
+    "cigre_lv": pn.create_cigre_network_lv,
 }
 
 
