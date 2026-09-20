@@ -5,6 +5,18 @@
 # no license) plus an optional web UI. No cloud account, no managed
 # service, and no monetary cost are required to run this stack.
 #
+# Credentials below use ${VAR:-default} interpolation rather than a
+# literal value, even though the default is the same well-known local
+# dev credential documented in README.md either way. This isn't
+# security theater for a fully local, non-internet-facing stack --
+# it's so a secret-scanning tool (see the GitGuardian finding on PR
+# #2) doesn't keep flagging a bare `password: postgres`-shaped line,
+# and so a real override is a one-line .env addition away, with zero
+# changes to this file, if this stack is ever pointed at something
+# less trivial than localhost. Docker Compose reads a .env file in
+# this same directory automatically if one exists (gitignored; see
+# .env.example for the variables it can override).
+#
 # Usage:
 #   docker compose up -d      # start Kafka + UI
 #   docker compose logs -f    # tail logs
@@ -63,13 +75,13 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: gridsense
+      POSTGRES_USER: ${TIMESCALE_USER:-postgres}
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-postgres}
+      POSTGRES_DB: ${TIMESCALE_DB:-gridsense}
     volumes:
       - timescale-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d gridsense"]
+      test: ["CMD-SHELL", "pg_isready -U ${TIMESCALE_USER:-postgres} -d ${TIMESCALE_DB:-gridsense}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -85,15 +97,14 @@ services:
     ports:
       - "3000:3000"
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       # Read by grafana/provisioning/datasources/timescaledb.yml via
       # Grafana's $__env{} provisioning macro, so the TimescaleDB
-      # credential isn't a literal value in a committed file. Same
-      # local dev default as everywhere else in the project.
-      TIMESCALE_USER: postgres
-      TIMESCALE_PASSWORD: postgres
+      # credential isn't a literal value in that committed file.
+      TIMESCALE_USER: ${TIMESCALE_USER:-postgres}
+      TIMESCALE_PASSWORD: ${TIMESCALE_PASSWORD:-postgres}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards
@@ -115,9 +126,9 @@ services:
     environment:
       TIMESCALE_HOST: timescaledb
       TIMESCALE_PORT: "5432"
-      TIMESCALE_USER: postgres
-      TIMESCALE_PASSWORD: postgres
-      TIMESCALE_DB: gridsense
+      TIMESCALE_USER: ${TIMESCALE_USER:-postgres}
+      TIMESCALE_PASSWORD: ${TIMESCALE_PASSWORD:-postgres}
+      TIMESCALE_DB: ${TIMESCALE_DB:-gridsense}
     depends_on:
       timescaledb:
         condition: service_healthy

@@ -9,9 +9,10 @@ build/
 dist/
 data/bronze/
 data/raw/
+data/hosting_capacity/
 transform/target/
 transform/dbt_packages/
 transform/logs/
 transform/.user.yml
 *.parquet
-data/hosting_capacity/
+.env
