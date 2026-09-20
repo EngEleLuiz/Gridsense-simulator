@@ -1,0 +1,6 @@
+network,v_min_pu,v_max_pu
+case14,0.95,1.05
+case39,0.95,1.05
+case57,0.95,1.05
+case118,0.95,1.05
+cigre_lv,0.90,1.10
