@@ -1,0 +1,109 @@
+{
+  "title": "GridSense Hosting Capacity",
+  "uid": "gridsense-hosting-capacity",
+  "tags": ["gridsense", "hosting-capacity"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "network",
+        "type": "query",
+        "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+        "query": "SELECT DISTINCT network FROM public_gold.mart_hosting_capacity ORDER BY network",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Hosting Capacity by Method (latest run)",
+      "description": "Side-by-side comparison of the three methodologies for the selected network. Read the stochastic row's numbers with care: at the default Monte Carlo sampling range, they are a lower bound under an arbitrary PV-size budget, not yet a ceiling comparable to the deterministic/QSTS results -- see hosting_capacity/stochastic.py's module docstring. Recalibration is deferred to Phase 8 (real PV-sizing data), not fixed yet.",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+          "rawSql": "SELECT DISTINCT ON (method) method, run_timestamp, total_pv_mw_comparable, total_pv_mw_p95, lambda_max, binding_constraint, violation_rate, n_trials FROM public_gold.mart_hosting_capacity WHERE network = '$network' ORDER BY method, run_timestamp DESC",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Total PV Hosting Capacity — Comparable Number (MW)",
+      "description": "deterministic/qsts: total PV at the binding constraint. stochastic: p50 of feasible trials — NOT yet calibrated to the same ceiling, see panel above.",
+      "type": "bargauge",
+      "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 9 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "megwatt",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": [], "fields": "", "values": true }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+          "rawSql": "SELECT DISTINCT ON (method) method AS metric, total_pv_mw_comparable AS value FROM public_gold.mart_hosting_capacity WHERE network = '$network' ORDER BY method, run_timestamp DESC",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Binding Constraint (deterministic / QSTS)",
+      "description": "Which element (voltage, line, or transformer) limited hosting capacity first, per method. Non-convergence shows as 'power_flow_non_convergence' rather than a physical element.",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 9 },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
+          "rawSql": "SELECT DISTINCT ON (method) method, lambda_max, binding_constraint FROM public_gold.mart_hosting_capacity WHERE network = '$network' AND method IN ('deterministic', 'qsts') ORDER BY method, run_timestamp DESC",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ]
+    }
+  ]
+}

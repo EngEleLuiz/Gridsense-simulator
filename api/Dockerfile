@@ -12,6 +12,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
 
+# Run as a non-root user. Irrelevant to the current risk (local-only,
+# not exposed to the internet), but standard hardening practice and
+# free to do -- if this ever moves beyond localhost, the container
+# doesn't already need a "run as root" habit unlearned.
+RUN useradd --create-home --shell /bin/bash appuser
+USER appuser
+
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

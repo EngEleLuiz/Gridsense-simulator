@@ -26,3 +26,28 @@ sources:
           - name: raw_value
             description: "Untouched JSON payload as published by the simulator."
             tests: [not_null]
+
+      - name: hosting_capacity_results
+        description: >
+          One row per hosting-capacity study run per method
+          (deterministic, stochastic, or qsts), loaded by
+          ingestion/load_hosting_capacity_to_timescale.py from the
+          Parquet written by scripts/run_hosting_capacity_study.py.
+          Not a hypertable, unlike raw_events -- these are one-off
+          study results, not streamed telemetry.
+        columns:
+          - name: network
+            tests: [not_null]
+          - name: method
+            description: "One of: deterministic, stochastic, qsts."
+            tests: [not_null]
+          - name: run_id
+            tests: [not_null]
+          - name: run_timestamp
+            tests: [not_null]
+          - name: raw_value
+            description: >
+              Method-specific result payload -- see
+              simulator/gridsense_sim/hosting_capacity/
+              {deterministic,stochastic,qsts}.py.
+            tests: [not_null]

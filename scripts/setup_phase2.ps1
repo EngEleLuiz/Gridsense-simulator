@@ -202,13 +202,10 @@ Write-Host "  Browser: http://localhost:8080" -ForegroundColor White
 Write-Host ""
 Write-Host "Terminal 4 — Query the data:" -ForegroundColor Yellow
 Write-Host '  python ingestion_query.py' -ForegroundColor White
-Write-Host "  (or manually with DuckDB: see PHASE2_EXECUTION.md)" -ForegroundColor White
 Write-Host ""
 Write-Host "Or use the Makefile shortcuts:" -ForegroundColor Yellow
 Write-Host "  make produce          (run simulator)" -ForegroundColor White
 Write-Host "  make consume-bronze   (run consumer)" -ForegroundColor White
 Write-Host "  make query-bronze     (verify data)" -ForegroundColor White
 Write-Host "  make down             (stop Kafka)" -ForegroundColor White
-Write-Host ""
-Write-Host "See PHASE2_EXECUTION.md for detailed instructions." -ForegroundColor Cyan
 Write-Host ""

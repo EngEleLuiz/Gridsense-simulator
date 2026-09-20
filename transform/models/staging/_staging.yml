@@ -21,3 +21,26 @@ models:
         tests: [not_null]
       - name: total_generation_mw
         tests: [not_null]
+
+  - name: stg_hosting_capacity_results
+    description: >
+      Typed view over bronze.hosting_capacity_results. Method-specific
+      fields (lambda_max/binding_constraint for deterministic/qsts;
+      violation_rate/n_trials for stochastic; qsts_total_steps/
+      qsts_steps_per_day for qsts) are NULL when not applicable to
+      that row's method, never defaulted to zero.
+    columns:
+      - name: network
+        tests: [not_null]
+      - name: method
+        description: "One of: deterministic, stochastic, qsts."
+        tests: [not_null]
+      - name: run_id
+        tests: [not_null]
+      - name: total_pv_mw_comparable
+        description: >
+          The one field every method populates: deterministic/qsts
+          report total_pv_mw directly; stochastic reports its p50
+          here. See this model's own top-of-file comment for the
+          stochastic calibration caveat before comparing it directly
+          to the other two methods.
