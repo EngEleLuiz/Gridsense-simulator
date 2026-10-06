@@ -1,377 +1,283 @@
 # GridSense Simulator
 
-Electrical Grid Digital Twin & Data Platform. This monorepo is built
-incrementally, phase by phase, always runnable locally before any
-component is deployed anywhere else.
+[![CI](https://github.com/EngEleLuiz/Gridsense-simulator/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/EngEleLuiz/Gridsense-simulator/actions/workflows/tests.yml)
 
-Every tool used in this repository is free and open-source and runs
-entirely on your own machine (Docker containers + local Python
-processes). No cloud account, managed service, or paid license is
-required at any phase.
+Electrical Grid Digital Twin & Data Platform, and the experimental
+infrastructure of a master's dissertation on **PV hosting capacity**
+(UFSC). This monorepo is built incrementally, phase by phase, always
+runnable locally before any component is deployed anywhere else.
+
+Every tool used here is free and open-source and runs entirely on your
+own machine (Docker containers + local Python processes). No cloud
+account, managed service, or paid license is required at any phase.
 
 ## Phases
 
-- **✓ Phase 1 — Simulation engine** (`simulator/`): loads an IEEE test
-  power network, applies synthetic load/renewable profiles and
-  contingencies, runs power flow, and emits telemetry. See
-  [`simulator/README.md`](simulator/README.md).
+| Phase | Status | What it delivers |
+|---|---|---|
+| 1 — Simulation engine | ✅ | `simulator/`: IEEE test networks, synthetic load/renewable profiles, N-1/N-2 contingencies, power flow, telemetry. See [`simulator/README.md`](simulator/README.md). |
+| 2 — Streaming & Bronze | ✅ | `ingestion/`: local Kafka; a consumer lands telemetry as partitioned Parquet. |
+| 3 — Transform | ✅ | `transform/`: Bronze → TimescaleDB → dbt Silver facts and Gold marts, with data-quality tests. See [`transform/README.md`](transform/README.md). |
+| 4 — API & dashboards | ✅ | `api/` (FastAPI) and `grafana/` (3 provisioned dashboards). See [`api/README.md`](api/README.md), [`grafana/README.md`](grafana/README.md). |
+| 5 — Network migration | ✅ | `cigre_lv`, a 44-bus radial LV distribution feeder (CIGRE TF C6.04.02), alongside `case14/39/57/118`. |
+| 6 — Hosting-capacity methods | ✅ | Deterministic, stochastic and QSTS hosting capacity, compared in a dbt mart, served by the API and a dashboard. |
+| **6.1 — Methodology review & bugfixes** | ✅ **current** | Line-by-line review against the literature; 12 fixes that change published numbers. See [below](#phase-61--methodology-review-and-bugfixes) and [`docs/CHANGES_phase6-bugfix.md`](docs/CHANGES_phase6-bugfix.md). |
+| 7 — Certified surrogate + open dataset | 🔄 in progress, not merged | Physics prior (LinDistFlow) + learned residual with conformal screening, as an accelerator inside the Phase 6 estimators. |
+| 8 — Real data | 🔲 planned | Real irradiance (SONDA/INMET) and residential load replacing the synthetic profiles. |
+| 9 — Streaming HC / operating envelope | 🔲 planned | Continuous envelope recomputation over the existing Kafka pipeline. |
 
-- **✓ Phase 2 — Streaming & Bronze ingestion** (`ingestion/`): a local
-  Kafka broker receives telemetry from the simulator, and a Python
-  consumer lands it as a partitioned Parquet "Bronze" layer on disk.
+## Phase 6.1 — methodology review and bugfixes
 
-- **✓ Phase 3 — Transform layer** (`transform/`): Bronze Parquet is
-  bulk-loaded into TimescaleDB, then a dbt project builds typed,
-  unnested Silver fact tables and pre-aggregated Gold marts, backed
-  by automated data-quality tests. See
-  [`transform/README.md`](transform/README.md).
+The Phase 6 code ran, but a review against Bollen & Rönnberg (2017),
+Torquato et al. (2018) and Jain et al. (2019/2020) found that several
+reported numbers measured the code, not the network. Each fix is locked
+by a regression test.
 
-- **✓ Phase 4 — API & Dashboards** (`api/`, `grafana/`): a FastAPI
-  read layer serves the Gold marts over HTTP (typed, tested,
-  auto-documented), and pre-provisioned Grafana dashboards
-  visualize them. See [`api/README.md`](api/README.md) and
-  [`grafana/README.md`](grafana/README.md).
+| ID | Problem | Fix |
+|---|---|---|
+| C1 | Deterministic search ran at nominal load, not at the critical point (max PV, min load) | `load_scale` (default 0.25), recorded with every result |
+| C2 | A ±10 % band applied without naming it; EN 50160's ±10 % is statistical, not instantaneous | Named frameworks: `ansi_c84_range_a`, `prodist_m8_bt`, `en50160_envelope`, each tagged instantaneous/statistical |
+| C3 | No PV = 0 check; a load-driven violation made bisection return a meaningless number | Baseline gate → `BaselineInfeasibleError`, recorded as a status, never as a capacity |
+| C4 | Monte Carlo measured its own sampling ceiling (p50 scaled linearly with it) | New estimator: critical penetration λ\* per random adoption scenario; HC = F⁻¹(α) with a distribution-free CI |
+| C5 | QSTS test window was night-only → λ ≈ 10⁶ | `NoDaylightError` |
+| C6 | QSTS redrew profile noise for every bisection candidate | One immutable `TimeSeries` per study |
+| C10 | Binding-constraint ranking mixed units | Relative exceedance beyond each limit |
+| C11 | Slack, generator and MV buses were voltage-checked | `voltage_scope_buses()` |
+| C12 | QSTS scaled load P but not Q | P and Q scaled together |
+| N1–N4 | Unbounded search reported as capacity; caller's network mutated; invalid numbers reaching API/dashboard; no provenance | `bounded` flag; deep copies; payload v2 with `is_comparable`; git commit + library versions on every row |
 
-- **✓ Phase 5 — Network migration** (`simulator/`): the simulator now
-  also supports `cigre_lv`, a real 44-bus low-voltage distribution
-  feeder (CIGRE Task Force C6.04.02), alongside the original IEEE
-  transmission test cases (`case14`/`39`/`57`/`118`). This is the
-  network the hosting-capacity work in Phase 6 runs against a
-  distribution feeder, not a transmission network.
+**Current numbers** (`cigre_lv`, synthetic profiles — preliminary, not dissertation results):
 
-- **✓ Phase 6 — Hosting capacity methodologies**
-  (`simulator/gridsense_sim/hosting_capacity/`): the three classic
-  hosting-capacity methods deterministic (bisection), stochastic
-  (Monte Carlo), and QSTS (quasi-static time series) implemented,
-  compared side by side in a dbt mart, served over the API, and
-  visualized in a third Grafana dashboard.
+| Method | Criterion | Load | λ (PV / nominal load) | Total PV | Binding |
+|---|---|---|---|---|---|
+| Deterministic | EN 50160 envelope | ×1.0 | 2.289 | 1.572 MW | trafo 0 (old published number, reproduced) |
+| Deterministic | EN 50160 envelope | ×0.25 | 1.586 | 1.089 MW | trafo 0 |
+| Deterministic | PRODIST M8 BT | ×0.25 | 1.164 | 0.799 MW | overvoltage, bus 16 |
+| Deterministic | PRODIST M8 BT | ×1.0 | — | — | `baseline_infeasible` (bus 35 at 0.912 pu with no PV) |
+| Stochastic p10 | PRODIST M8 BT | ×0.25 | ≈ 0.44 (95 % CI ≈ 0.28–0.53, n = 40) | ≈ 0.30 MW | depends on the adoption model |
 
-- **Phase 7+ (planned)** — real datasets (ONS, NREL NSRDB/WIND
-  Toolkit, SONDA, BDGD) replacing synthetic profiles; a streaming
-  Dynamic Operating Envelope prototype on top of the existing Kafka
-  pipeline.
+Two findings are already methodological results: the operating point
+and the regulatory criterion dominate the answer (≈ 2× between the old
+and corrected deterministic numbers), and uncoordinated adoption hosts
+far less than load-proportional allocation.
+
+**Still open** (tracked in [`docs/CODE_REVIEW_phase6-bugfix.md`](docs/CODE_REVIEW_phase6-bugfix.md)):
+QSTS has no duration criterion τ̄ (C7) or tap control (C8); the synthetic
+load peaks at midday together with solar (C9), so **no PRODIST QSTS
+number exists yet**; severity metrics VVSI/OSI/RPFI are not implemented
+(C13); isolated buses are not yet flagged as violations; the Silver
+voltage facts still judge slack/generator buses that the Python code
+excludes.
 
 ## Architecture
 
 ```
 simulator            bronze_consumer          load_bronze_to_timescale.py
-┌───────────┐  Kafka  ┌────────────────┐ bulk  ┌───────────────────┐
-│pandapower  │ topics │ Kafka -> Parquet│ COPY  │ idempotent upsert  │
-│KafkaPublish├───────▶│ (Bronze)        ├──────▶│ bronze.raw_events   │
-└───────────┘         └───────┬────────┘        │ (TimescaleDB       │
-                               │                 │  hypertable)       │
-                               ▼                 └─────────┬─────────┘
-                    data/bronze/*.parquet                  │  dbt
-                    (queryable with DuckDB,                ▼
-                     no server needed)          staging → silver → gold
-                                                 (typed, unnested, tested)
-                                                            │
-                                        ┌───────────────────┼───────────────────┐
-                                        ▼                                       ▼
-                              FastAPI (api/)                          Grafana (grafana/)
-                              typed, tested REST                      3 auto-provisioned
-                              endpoints over Gold                     dashboards over Gold
-                              http://localhost:8000/docs               http://localhost:3000
+┌────────────┐ Kafka ┌─────────────────┐ COPY ┌────────────────────┐
+│ pandapower │ topics│ Kafka -> Parquet│ ───▶ │ bronze.raw_events  │
+│ publisher  ├──────▶│ (Bronze)        │      │ (hypertable)       │
+└────────────┘       └────────┬────────┘      └─────────┬──────────┘
+                              ▼                         │ dbt
+                   data/bronze/*.parquet                ▼
+                   (DuckDB, no server)     staging → silver → gold
+                                                        │
+                                  ┌─────────────────────┴─────────────┐
+                                  ▼                                   ▼
+                       FastAPI  (api/)                     Grafana (grafana/)
+                       http://localhost:8000/docs          http://localhost:3001
 
-hosting_capacity/ (Phase 6) ─── run_hosting_capacity_study.py ──▶ data/hosting_capacity/*.parquet
-(deterministic/stochastic/qsts,                                            │
- run against cigre_lv or any                                               ▼ load_hosting_capacity_to_timescale.py
- other SUPPORTED_NETWORKS entry)                          bronze.hosting_capacity_results (plain table,
-                                                            not a hypertable one-off study results,
-                                                            not streamed telemetry)
-                                                                            │  dbt
-                                                                            ▼
-                                                   stg_hosting_capacity_results → mart_hosting_capacity
-                                                            (same staging → gold path as telemetry,
-                                                             feeding the same FastAPI + Grafana above)
+hosting_capacity/ ── run_hosting_capacity_study.py ──▶ data/hosting_capacity/*.parquet
+(deterministic | stochastic | qsts,                         │ load_hosting_capacity_to_timescale.py
+ shared limits/scope/violations/                            ▼
+ baseline/search)                          bronze.hosting_capacity_results (plain table)
+                                                            │ dbt
+                                                            ▼
+                               stg_hosting_capacity_results → mart_hosting_capacity
+                               (same API + Grafana as above)
 ```
 
-Kafka topics used:
-- `grid.telemetry.raw` — one record per simulated power-flow step.
-- `grid.events.alerts` — contingencies and non-convergence events.
+Kafka topics: `grid.telemetry.raw` (one record per power-flow step) and
+`grid.events.alerts` (contingencies, non-convergence).
 
-The Bronze layer follows a **schema-on-read** pattern: each record
-stores the raw JSON payload untouched, plus ingestion metadata (topic,
-Kafka partition/offset, ingestion timestamp). Typed parsing,
-unnesting, and data-quality checks all happen downstream in the dbt
-transform layer this keeps ingestion simple and lossless, and means
-a schema change in the simulator only ever touches one staging model.
-The API and Grafana dashboards both read exclusively from the Gold
-layer, never from Bronze/Silver directly one boundary, one place to
-change if the warehouse schema evolves.
-
-Hosting-capacity study results follow the same Bronze-pattern
-philosophy (raw JSON payload + run metadata, typed downstream in dbt)
-even though they don't arrive via Kafka they're one-off study runs,
-not streamed telemetry, so they get a plain table
-(`bronze.hosting_capacity_results`) instead of a hypertable, but the
-same staging → gold path and the same API/Grafana consumers apply
-once they land.
+Bronze is **schema-on-read**: each record keeps the raw JSON payload
+plus ingestion metadata; typing, unnesting and quality checks happen in
+dbt. The API and Grafana read only the Gold layer. Hosting-capacity
+results follow the same pattern but are one-off studies, so they land in
+a plain table instead of a hypertable.
 
 ## Requirements
 
-- Docker + Docker Compose (Kafka, TimescaleDB, Grafana all free, run locally)
-- Python 3.10+
+- Docker + Docker Compose
+- Python 3.10+ (CI tests 3.10 and 3.12, on Linux and Windows)
+- `make` (Linux/macOS, or Git Bash on Windows) — optional; every target has a manual equivalent below
 
 ## Setup
 
 ```bash
-# 1. Create a Python virtual environment
 python -m venv .venv
-source .venv/bin/activate   # on Windows: .venv\Scripts\Activate.ps1
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
-# 2. Install dependencies
-cd simulator && pip install -e ".[dev,kafka]" && cd ..
-pip install -r ingestion/requirements.txt
-pip install -r transform/requirements.txt
-pip install -r api/requirements.txt
+pip install -e "simulator[dev,fast,kafka]"   # 'fast' = numba, ~10x faster power flow
+pip install -r ingestion/requirements.txt -r api/requirements.txt
 
-# 3. (Optional) override default credentials
-# Every credential below has a working default baked into
-# docker-compose.yml (${VAR:-default} interpolation) you only need
-# this step if you want something different from postgres/postgres
-# and admin/admin. Copy .env.example to .env (gitignored) and edit it;
-# .env is picked up automatically by `docker compose`.
-cp .env.example .env
+# dbt pins a deepdiff version incompatible with pandapower: use its own venv
+python -m venv .venv-dbt
+.venv-dbt/bin/pip install -r transform/requirements.txt   # Windows: .venv-dbt\Scripts\pip
 
-# 4. Start local Kafka + TimescaleDB + Grafana
+cp .env.example .env    # optional: only to override the dev credentials
 docker compose up -d
 # Kafka:       localhost:9092
-# Kafka UI:    http://localhost:8080  (browse topics/messages visually)
+# Kafka UI:    http://localhost:8080
 # TimescaleDB: localhost:5432 (db=gridsense, user=postgres, password=postgres)
-# Grafana:     http://localhost:3000  (user=admin, password=admin)
+# Grafana:     http://localhost:3001 (admin/admin)
 ```
 
-## Run the full pipeline
-
-### Using Make (Linux/Mac/Git Bash)
+## Run the telemetry pipeline
 
 ```bash
-make up                 # Start Kafka + TimescaleDB + Grafana
-make produce              # Simulator -> Kafka
-make consume-bronze         # Kafka -> Parquet (Bronze)
-make load-timescale            # Bronze Parquet -> TimescaleDB
-make dbt-run                      # Build Silver + Gold dbt models
-make dbt-test                        # Run the dbt data-quality tests
-make api-run                            # Serve the Gold layer over HTTP
-make down                                  # Stop everything
+make up              # Kafka + TimescaleDB + Grafana
+make produce         # simulator -> Kafka
+make consume-bronze  # Kafka -> Bronze Parquet
+make load-timescale  # Bronze -> TimescaleDB (idempotent)
+make dbt-build       # seeds + Silver/Gold + all dbt tests
+make api-run         # http://localhost:8000/docs
+make help            # every target
 ```
 
-### Manual, step by step (any OS)
-
-**1. Produce telemetry into Kafka:**
+Manual equivalents (any OS):
 
 ```bash
-python -m gridsense_sim.cli \
-  --network case14 --steps 200 --kafka \
-  --kafka-bootstrap-servers localhost:9092 -v
-```
-
-`--network` also accepts `cigre_lv` (Phase 5's 44-bus LV distribution
-feeder) alongside the transmission test cases.
-
-**2. Consume from Kafka, land it as Parquet (Bronze):**
-
-```bash
-python ingestion/bronze_consumer.py \
-  --bootstrap-servers localhost:9092 \
-  --output-dir data/bronze -v
-```
-
-**3. Load Bronze into TimescaleDB:**
-
-```bash
-python ingestion/load_bronze_to_timescale.py \
-  --bronze-dir data/bronze \
+python -m gridsense_sim.cli --network case14 --steps 200 --kafka --kafka-bootstrap-servers localhost:9092 -v
+python ingestion/bronze_consumer.py --bootstrap-servers localhost:9092 --output-dir data/bronze -v
+python ingestion/load_bronze_to_timescale.py --bronze-dir data/bronze \
   --db-url postgresql://postgres:postgres@localhost:5432/gridsense -v
+cd transform && dbt build --profiles-dir . && cd ..      # 'build' = seed + run + test
+cd api && uvicorn app.main:app --reload --port 8000
 ```
 
-Idempotent: safe to re-run after a partial consumer run.
+`--network` also accepts `cigre_lv`. Without Kafka, `--output telemetry.jsonl`
+writes JSON Lines, and `scripts/ci/jsonl_to_bronze.py` turns them into
+Bronze Parquet (this is how CI tests the pipeline).
 
-**4. Build and test the dbt models:**
+## Run a hosting-capacity study
 
 ```bash
-cd transform
-export DBT_PROFILES_DIR=$(pwd)
-dbt seed   # loads transform/seeds/network_voltage_limits.csv
-dbt run
-dbt test
+make hc-study    # deterministic + stochastic, cigre_lv, PRODIST, critical point (minutes)
+make hc-qsts     # QSTS, 7-day horizon
+make hc-load     # Parquet -> bronze.hosting_capacity_results
+make dbt-build
 ```
 
-**5. Serve the Gold layer over HTTP:**
+or directly:
 
 ```bash
-cd api
-uvicorn app.main:app --reload --port 8000
+python scripts/run_hosting_capacity_study.py --network cigre_lv \
+  --framework prodist_m8_bt --load-scale 0.25 \
+  --methods deterministic stochastic qsts --mc-n-scenarios 60 -v
 ```
 
-Open http://localhost:8000/docs for interactive API docs.
+| Option | Meaning |
+|---|---|
+| `--framework` | `ansi_c84_range_a` (0.95–1.05) · `prodist_m8_bt` (0.92–1.05, verify the revision in force) · `en50160_envelope` (0.90–1.10, statistical). Default: per network (`cigre_lv` → EN 50160 envelope). |
+| `--load-scale` | Load multiplier at the critical operating point for deterministic/stochastic (default 0.25, an assumption until Phase 8). `1.0` reproduces the old nominal-load numbers. |
+| `--mc-n-scenarios`, `--mc-alpha` | Stochastic HC = F⁻¹(α) of λ\*. A finite 95 % CI for p10 needs **n ≥ 36**; use ≥ 60. |
+| `--mc-adoption-min/max`, `--mc-size-dispersion` | Adoption model (assumptions — run a sensitivity analysis before citing). |
+| `--qsts-total-steps`, `--qsts-steps-per-day` | QSTS horizon. The 60-day default costs ~140 k power flows (≈ 1.5 h without numba). |
 
-**6. View the dashboards:**
-
-Open http://localhost:3000 three dashboards are already there,
-pre-loaded and pointed at the same Gold tables:
-**GridSense Overview**, **GridSense Presentation**, and
-**GridSense Hosting Capacity**.
-
-### Running a hosting-capacity study (Phase 6)
-
-Independent of the telemetry pipeline above this runs the three
-methodologies against a network and pushes the comparison into the
-same Gold layer the API and dashboard #3 read from:
-
-```bash
-<<<<<<< HEAD
-# Run the three methods against cigre_lv (writes Parquet)
-python scripts/run_hosting_capacity_study.py \
-  --network cigre_lv --methods deterministic stochastic qsts -v
-=======
-# Run the three methods against cigre_lv (writes Parquet).
-# --framework: ansi_c84_range_a | prodist_m8_bt | en50160_envelope
-# --load-scale: critical (minimum-load) operating point, default 0.25
-python scripts/run_hosting_capacity_study.py \
-  --network cigre_lv --framework prodist_m8_bt \
-  --methods deterministic stochastic qsts -v
->>>>>>> phase-6-hosting-capacity
-
-# QSTS is by far the most expensive: it defaults to a 60-day horizon
-# (up to ~350k power flows for one answer see hosting_capacity/
-# qsts.py's module docstring). Pass --qsts-total-steps to control it,
-# e.g. --qsts-total-steps 2016 for a 7-day horizon during iteration.
-
-# Load the results into TimescaleDB (idempotent)
-python ingestion/load_hosting_capacity_to_timescale.py \
-  --results-dir data/hosting_capacity -v
-
-# Propagate through dbt and refresh the dashboard
-cd transform && dbt run && dbt test && cd ..
-docker compose restart grafana
-```
-
-<<<<<<< HEAD
-Read the `stochastic` method's numbers with care: at the default
-Monte Carlo sampling range, they're a lower bound under an arbitrary
-PV-size budget, not yet a ceiling comparable to the
-deterministic/QSTS results see
-`simulator/gridsense_sim/hosting_capacity/stochastic.py`'s module
-docstring.
-=======
-Interpreting results (payload v2, see `docs/CHANGES_phase6-bugfix.md`):
-compare only rows with `is_comparable = true` and the same
-`criterion_framework` (and `load_scale` for snapshot methods). The
-stochastic number is `F^-1(alpha)` of the critical penetration over
-random adoption scenarios, with a distribution-free confidence
-interval. A run that is infeasible before any PV is installed is
-recorded with `status = 'baseline_infeasible'`, never as a capacity.
-Rows from before this fix are kept as `legacy_invalid`.
->>>>>>> phase-6-hosting-capacity
+**Reading the results.** Compare only rows with `is_comparable = true`,
+the same `criterion_framework`, and (for snapshot methods) the same
+`load_scale`. A failed study is kept as a row with
+`status = baseline_infeasible | no_daylight | error` and a NULL capacity.
+Pre-review rows are kept as `legacy_invalid`. QSTS is zero-tolerance
+(`qsts_criterion = zero_tolerance`) until the τ̄ criterion lands.
 
 ## Verify
 
-**Bronze (Parquet, via DuckDB so no server needed):**
-
-```python
-import duckdb
-con = duckdb.connect()
-con.sql("""
-    SELECT raw_value::JSON->>'step' AS step,
-           (raw_value::JSON->>'total_load_mw')::DOUBLE AS total_load_mw
-    FROM read_parquet('data/bronze/**/*.parquet')
-    ORDER BY step::INT
-    LIMIT 10
-""").show()
-```
-
-**Gold (TimescaleDB, via psql or any SQL client):**
-
 ```sql
-SELECT * FROM gold.mart_grid_kpis_daily;
-SELECT * FROM gold.mart_hosting_capacity;
+-- dbt schema names = profile schema 'public' + model schema
+SELECT * FROM public_gold.mart_grid_kpis_daily;
+SELECT method, criterion_framework, load_scale, total_pv_mw_comparable, binding_constraint
+FROM public_gold.mart_hosting_capacity
+WHERE is_comparable ORDER BY run_timestamp DESC;
 ```
-
-**API (curl or browser):**
 
 ```bash
 curl http://localhost:8000/api/v1/kpis/daily
-curl "http://localhost:8000/api/v1/hosting-capacity/compare?network=cigre_lv"
+curl "http://localhost:8000/api/v1/hosting-capacity/compare?network=cigre_lv&framework=prodist_m8_bt"
+curl "http://localhost:8000/api/v1/hosting-capacity/compare?comparable_only=false"   # audit failed/legacy rows
 ```
 
-## Tests
+## Tests and CI
 
 ```bash
-make test                  # simulator + ingestion + API unit tests (mocked, no Docker needed)
-<<<<<<< HEAD
-=======
-make test-hc               # hosting-capacity tests only
->>>>>>> phase-6-hosting-capacity
-make dbt-test                # dbt data-quality tests (needs TimescaleDB running)
+make test        # simulator + ingestion + API (no Docker needed)
+make test-hc     # hosting-capacity tests only (~40 s)
+make lint        # same ruff checks as CI
+make dbt-build   # dbt tests (needs TimescaleDB running)
 ```
 
-The simulator, ingestion consumer, and API are all unit tested with
-fake dependency doubles (Kafka producer/consumer, DB session), so
-those suites run without Docker including the hosting-capacity
-<<<<<<< HEAD
-methods (`simulator/tests/test_hosting_capacity.py`) and the
-=======
-methods (`simulator/tests/test_hc_*.py`, one file per module) and the
->>>>>>> phase-6-hosting-capacity
-`/api/v1/hosting-capacity/compare` endpoint
-(`api/tests/test_hosting_capacity.py`). The dbt test suite needs a
-live database since it validates real data, and includes network-
-aware voltage-limit checks and a hosting-capacity sanity test
-<<<<<<< HEAD
-(hosting capacity can't be physically negative) alongside the
-=======
-(non-negative capacity, ordered bisection bracket, completeness of
-comparable rows) alongside the
->>>>>>> phase-6-hosting-capacity
-original Phase 3 tests.
+| Suite | Where | What it covers |
+|---|---|---|
+| Simulator | `simulator/tests/test_hc_*.py`, `test_study_runner.py`, `test_engine.py` | Every C/N fix above, golden numbers, payload v2, cross-layer limits (Python ↔ dbt seed) |
+| Ingestion | `ingestion/tests/` | Bronze consumer (Kafka mocked) |
+| API | `api/tests/` | All endpoints (DB session mocked), `comparable_only` default |
+| dbt | `transform/tests/`, schema YAML | Voltage limits per network, HC bracket ordering, comparable rows complete, non-negative capacity |
+
+**Every commit on every branch** (and every PR) runs
+[`.github/workflows/tests.yml`](.github/workflows/tests.yml):
+
+| Job | Checks |
+|---|---|
+| `hygiene` | No merge-conflict markers, no CRLF, required files present, all JSON/YAML parse, `docker compose config` valid |
+| `lint` | ruff: syntax errors and undefined names block; the rest is advisory |
+| `simulator` | pytest + coverage on Ubuntu (3.10, 3.12) and Windows (3.12) |
+| `ingestion`, `api` | Unit tests |
+| `e2e` | Real TimescaleDB: simulated telemetry → Bronze → loader → HC studies (incl. a deliberate `baseline_infeasible`) → `dbt build` → data-contract assertions (`scripts/ci/assert_e2e.py`) → the real API queried over HTTP |
+| `docker` | API image builds, runs as non-root, imports the app |
+| `ci-ok` | Single gate: green only if all of the above are green |
+
+Recommended: protect `main` (Settings → Branches) with "require a pull
+request" and "require status check `ci-ok`". Dependabot opens weekly
+update PRs for Actions and pip, each validated by the same workflow.
 
 ## Shutting down
 
 ```bash
-make down                  # stop containers, keep data volumes
-docker compose down -v     # also wipe Kafka, TimescaleDB, and Grafana data
+make down                 # stop containers, keep volumes
+docker compose down -v    # also wipe Kafka, TimescaleDB and Grafana data
 ```
 
 ## Repository layout
 
 ```
 gridsense-simulator/
+├── .github/
+│   ├── workflows/tests.yml          # CI: hygiene, lint, tests, e2e, docker, ci-ok
+│   └── dependabot.yml
 ├── docker-compose.yml               # Kafka + TimescaleDB + Grafana (+ optional API)
-├── .env.example                     # Overridable credentials, copy to .env to use
-├── Makefile                         # Shortcuts for every command above
-├── simulator/                       # Phase 1 & 5: simulation engine (+ Kafka publisher)
+├── .env.example
+├── Makefile                         # `make help` lists every target
+├── docs/
+│   ├── CHANGES_phase6-bugfix.md     # Phase 6.1 changelog
+│   └── CODE_REVIEW_phase6-bugfix.md # post-merge review, open issues
+├── simulator/
 │   ├── gridsense_sim/
-│   │   ├── hosting_capacity/        # Phase 6: deterministic/stochastic/qsts + shared
-│   │   │                            # limits.py, violations.py, allocation.py
-│   │   ├── engine.py                # SUPPORTED_NETWORKS incl. cigre_lv (Phase 5)
-│   │   └── ...
-│   └── tests/
+│   │   ├── hosting_capacity/        # limits, scope, violations, baseline, search,
+│   │   │                            # conditions, allocation, quantiles, timeseries,
+│   │   │                            # deterministic, stochastic, qsts, errors
+│   │   ├── provenance.py            # git commit + library versions per result
+│   │   ├── engine.py, cli.py, profiles.py, scenarios.py, ...
+│   └── tests/                       # test_hc_*.py: one file per module
 ├── scripts/
-│   └── run_hosting_capacity_study.py  # Phase 6: runs the 3 methods, writes Parquet
-├── ingestion/                        # Phase 2 & 3: Kafka -> Parquet -> TimescaleDB
-│   ├── bronze_consumer.py
-│   ├── load_bronze_to_timescale.py
-│   ├── load_hosting_capacity_to_timescale.py  # Phase 6
-│   └── tests/
-├── transform/                        # Phase 3 & 6: dbt project (Silver/Gold)
-│   ├── seeds/
-│   │   └── network_voltage_limits.csv  # Phase 6: per-network voltage tolerance
-│   ├── models/{staging,silver,gold}/   # incl. stg/mart_hosting_capacity (Phase 6)
-│   ├── tests/
-│   └── README.md
-├── api/                                 # Phase 4 & 6: FastAPI read layer
-│   ├── app/
-│   │   └── routers/hosting_capacity.py    # Phase 6
-│   ├── tests/
-│   └── README.md
-├── grafana/                                # Phase 4 & 6: dashboards
-│   ├── provisioning/
-│   ├── dashboards/                            # 3 dashboards, incl.
-│   │                                          # gridsense-hosting-capacity.json
-│   └── README.md
-└── data/
-    ├── bronze/                                # Generated Parquet lake (gitignored)
-    └── hosting_capacity/                      # Phase 6 study results (gitignored)
+│   ├── run_hosting_capacity_study.py
+│   └── ci/                          # jsonl_to_bronze.py, assert_e2e.py
+├── ingestion/                       # Kafka -> Parquet -> TimescaleDB (+ HC loader)
+├── transform/                       # dbt: seeds, staging/silver/gold, tests
+├── api/                             # FastAPI read layer (+ Dockerfile)
+├── grafana/                         # provisioning + 3 dashboards
+└── data/                            # generated, gitignored
 ```
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).

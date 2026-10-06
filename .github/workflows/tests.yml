@@ -1,101 +1,328 @@
-# CI for GridSense (review finding N5).
+# GridSense CI -- runs on EVERY commit, on every branch, and on PRs.
 #
-# Purpose: make the hosting-capacity regression tests (baseline gate,
-# no-daylight guard, golden numbers from doc 06, cross-layer limits)
-# run on every push, instead of only when someone remembers to.
+# Jobs (all must pass for the single required check "ci-ok"):
+#   hygiene      merge-conflict markers, CRLF, JSON/YAML, docker compose config
+#   lint         ruff: syntax errors / undefined names block; the rest is advisory
+#   simulator    pytest + coverage on Ubuntu (Py 3.10, 3.12) and Windows (Py 3.12)
+#   ingestion    pytest (Kafka mocked)
+#   api          pytest (DB session mocked)
+#   e2e          simulator -> Bronze -> TimescaleDB -> HC study -> dbt build -> real API
+#   docker       builds the API image (validates the Dockerfile; nothing is pushed)
 #
-# Jobs are isolated on purpose: dbt-postgres and pandapower pin
-# incompatible versions of `deepdiff`, so they never share an env.
+# dbt-postgres and pandapower pin incompatible `deepdiff` versions, so the
+# e2e job keeps them in separate virtualenvs.
 
-name: tests
+name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PYTHONUNBUFFERED: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  FORCE_COLOR: "1"
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
+  # ---------------------------------------------------------------- hygiene
+  hygiene:
+    name: Repo hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: No unresolved merge-conflict markers
+        run: |
+          if git grep -nE '^(<<<<<<<|>>>>>>>)( |$)' -- .; then
+            echo "::error::Unresolved merge-conflict markers (see lines above). Resolve the merge before committing."
+            exit 1
+          fi
+          echo "No conflict markers."
+
+      - name: No CRLF line endings committed (see .gitattributes)
+        run: |
+          crlf=$(git ls-files --eol | awk '$1 ~ /crlf/ {print $NF}')
+          if [ -n "$crlf" ]; then
+            echo "$crlf"
+            echo "::error::Files committed with CRLF. Fix with: git add --renormalize . && git commit"
+            exit 1
+          fi
+          echo "All tracked text files are LF."
+
+      - name: Files the docs and CI rely on exist
+        run: |
+          missing=0
+          for f in Makefile docker-compose.yml transform/seeds/network_voltage_limits.csv \
+                   scripts/run_hosting_capacity_study.py scripts/ci/jsonl_to_bronze.py \
+                   scripts/ci/assert_e2e.py; do
+            [ -f "$f" ] || { echo "::error file=$f::Required file is missing"; missing=1; }
+          done
+          exit $missing
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Tracked JSON and YAML parse
+        run: |
+          pip install -q pyyaml
+          python - <<'PY'
+          import json, subprocess, sys, yaml
+          files = subprocess.run(["git", "ls-files", "*.json", "*.yml", "*.yaml"],
+                                 capture_output=True, text=True, check=True).stdout.split()
+          bad = 0
+          for f in files:
+              try:
+                  with open(f, encoding="utf-8") as fh:
+                      (json.load if f.endswith(".json") else yaml.safe_load)(fh)
+              except Exception as exc:  # noqa: BLE001
+                  print(f"::error file={f}::{exc}")
+                  bad += 1
+          print(f"checked {len(files)} files, {bad} invalid")
+          sys.exit(1 if bad else 0)
+          PY
+
+      - name: docker compose config is valid
+        run: docker compose -f docker-compose.yml config --quiet
+
+  # ------------------------------------------------------------------- lint
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -q "ruff>=0.6"
+      - name: Blocking -- syntax errors and undefined names
+        run: ruff check --select E9,F63,F7,F82 --output-format github .
+      - name: Advisory -- full pyflakes set (does not fail the build)
+        continue-on-error: true
+        run: ruff check --select F --output-format github .
+
+  # -------------------------------------------------------------- simulator
   simulator:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    name: Simulator (${{ matrix.os }}, py${{ matrix.python }})
+    needs: hygiene
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, python: "3.10" }
+          - { os: ubuntu-latest, python: "3.12" }
+          - { os: windows-latest, python: "3.12" }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
           cache: pip
-      - run: pip install -e "simulator[dev,fast]"
-      - run: python -m pytest simulator/tests -q
-
-  api:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+          cache-dependency-path: simulator/pyproject.toml
+      - name: Install
+        run: pip install -e "simulator[dev,fast]" pytest-cov
+      - name: Test
+        run: >
+          python -m pytest simulator/tests -q -ra --durations=15
+          --junitxml=reports/simulator-junit.xml
+          --cov=gridsense_sim --cov-report=term-missing:skip-covered
+          --cov-report=xml:reports/simulator-coverage.xml
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          python-version: "3.12"
-          cache: pip
-      - run: pip install -r api/requirements.txt
-      - run: python -m pytest -q
-        working-directory: api
+          name: simulator-reports-${{ matrix.os }}-py${{ matrix.python }}
+          path: reports/
+          if-no-files-found: ignore
 
+  # -------------------------------------------------------------- ingestion
   ingestion:
+    name: Ingestion
+    needs: hygiene
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: ingestion/requirements.txt
       - run: pip install -r ingestion/requirements.txt
-      - run: python -m pytest tests -q
+      - run: python -m pytest tests -q -ra --junitxml=../reports/ingestion-junit.xml
         working-directory: ingestion
 
-  dbt:
-    # Builds and tests the hosting-capacity models against a real
-    # Postgres, fed by the real runner + loader (end-to-end contract).
+  # -------------------------------------------------------------------- api
+  api:
+    name: API
+    needs: hygiene
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/requirements.txt
+      - run: pip install -r api/requirements.txt
+      - run: python -m pytest -q -ra --junitxml=../reports/api-junit.xml
+        working-directory: api
+
+  # -------------------------------------------------------------------- e2e
+  e2e:
+    name: End-to-end (TimescaleDB + dbt + API)
+    needs: hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
-      postgres:
-        image: postgres:16
+      timescaledb:
+        image: timescale/timescaledb:latest-pg16
         env:
+          POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: gridsense
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s --health-timeout 5s --health-retries 10
+          --health-cmd "pg_isready -U postgres -d gridsense"
+          --health-interval 5s --health-timeout 5s --health-retries 20
     env:
+      DB_URL: postgresql://postgres:postgres@localhost:5432/gridsense
       TIMESCALE_HOST: localhost
       TIMESCALE_PORT: "5432"
       TIMESCALE_USER: postgres
       TIMESCALE_PASSWORD: postgres
       TIMESCALE_DB: gridsense
+      WORK: ${{ github.workspace }}/.ci-work
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Produce study results (small, fast configuration)
+          cache: pip
+          cache-dependency-path: |
+            simulator/pyproject.toml
+            ingestion/requirements.txt
+            transform/requirements.txt
+            api/requirements.txt
+
+      - name: Install (three isolated venvs)
         run: |
-          python -m venv /tmp/sim && . /tmp/sim/bin/activate
-          pip install -e "simulator[dev,fast]" -r ingestion/requirements.txt
-          python scripts/run_hosting_capacity_study.py --network cigre_lv \
-            --framework prodist_m8_bt --methods deterministic stochastic \
-            --mc-n-scenarios 8 --tolerance 0.05 --output-dir /tmp/hc
-          python ingestion/load_hosting_capacity_to_timescale.py \
-            --results-dir /tmp/hc \
-            --db-url postgresql://postgres:postgres@localhost:5432/gridsense
-      - name: dbt build (hosting-capacity models)
+          python -m venv /tmp/sim && /tmp/sim/bin/pip install -q -e "simulator[dev,fast]" -r ingestion/requirements.txt
+          python -m venv /tmp/dbt && /tmp/dbt/bin/pip install -q -r transform/requirements.txt
+          python -m venv /tmp/api && /tmp/api/bin/pip install -q -r api/requirements.txt
+
+      - name: Simulate telemetry (no Kafka) and land it as Bronze Parquet
         run: |
-          python -m venv /tmp/dbt && . /tmp/dbt/bin/activate
-          pip install -r transform/requirements.txt
-          dbt build --project-dir transform --profiles-dir transform \
-            --select stg_hosting_capacity_results mart_hosting_capacity
+          mkdir -p "$WORK/telemetry"
+          for net in case14 cigre_lv; do
+            /tmp/sim/bin/python -m gridsense_sim.cli --network "$net" --steps 48 \
+              --seed 1 --output "$WORK/telemetry/$net.jsonl"
+          done
+          /tmp/sim/bin/python scripts/ci/jsonl_to_bronze.py "$WORK"/telemetry/*.jsonl \
+            --output-dir "$WORK/bronze"
+
+      - name: Load Bronze into TimescaleDB
+        run: /tmp/sim/bin/python ingestion/load_bronze_to_timescale.py --bronze-dir "$WORK/bronze" --db-url "$DB_URL" -v
+
+      - name: Run hosting-capacity studies (small, fast configuration)
+        run: |
+          run() { /tmp/sim/bin/python scripts/run_hosting_capacity_study.py --network cigre_lv --output-dir "$WORK/hc" "$@"; }
+          # PRODIST at the critical point: deterministic + stochastic.
+          # n=40: smallest round n with a finite 95% CI for p10 (needs n >= 36).
+          run --framework prodist_m8_bt --methods deterministic stochastic --mc-n-scenarios 40 --tolerance 0.05 -v
+          # QSTS on one hourly day (default framework; PRODIST is baseline-infeasible with the synthetic profile)
+          run --methods qsts --qsts-total-steps 24 --qsts-steps-per-day 24 --tolerance 0.1 -v
+          # A study that MUST be recorded as baseline_infeasible, never as a capacity
+          run --framework prodist_m8_bt --load-scale 1.0 --methods deterministic -v
+
+      - name: Load HC results into TimescaleDB
+        run: /tmp/sim/bin/python ingestion/load_hosting_capacity_to_timescale.py --results-dir "$WORK/hc" --db-url "$DB_URL" -v
+
+      - name: dbt build (seeds + all models + all tests)
+        run: |
+          /tmp/dbt/bin/dbt debug --project-dir transform --profiles-dir transform
+          /tmp/dbt/bin/dbt build --project-dir transform --profiles-dir transform
+
+      - name: Assert end-to-end data contract
+        run: /tmp/sim/bin/python scripts/ci/assert_e2e.py --db-url "$DB_URL" --require-timescale
+
+      - name: Smoke-test the real API against the populated database
+        working-directory: api
+        run: |
+          /tmp/api/bin/uvicorn app.main:app --port 8000 > "$WORK/uvicorn.log" 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:8000/health >/dev/null && break; sleep 1; done
+          /tmp/api/bin/python - <<'PY'
+          import json, sys, urllib.request
+          def get(path):
+              with urllib.request.urlopen(f"http://localhost:8000{path}") as r:
+                  assert r.status == 200, (path, r.status)
+                  return json.load(r)
+          assert get("/health")["database"], "health check without database status"
+          assert get("/api/v1/kpis/daily"), "no daily KPIs"
+          rows = get("/api/v1/hosting-capacity/compare?network=cigre_lv")
+          assert rows and all(r["is_comparable"] for r in rows), rows
+          assert {r["method"] for r in rows} >= {"deterministic", "stochastic", "qsts"}, rows
+          audit = get("/api/v1/hosting-capacity/compare?network=cigre_lv&comparable_only=false")
+          bad = [r for r in audit if r["status"] == "baseline_infeasible"]
+          assert bad and all(r["total_pv_mw_comparable"] is None for r in bad), bad
+          print(f"API OK: {len(rows)} comparable rows, {len(bad)} baseline_infeasible audit row(s)")
+          PY
+
+      - name: Upload e2e artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: |
+            transform/target/run_results.json
+            transform/logs/
+            .ci-work/uvicorn.log
+          if-no-files-found: ignore
+
+  # ----------------------------------------------------------------- docker
+  docker:
+    name: Docker image (API)
+    needs: hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build (no push)
+        run: docker build -t gridsense-api:ci api
+      - name: Image runs as non-root and imports the app
+        run: |
+          test "$(docker run --rm --entrypoint id gridsense-api:ci -u)" != "0"
+          docker run --rm --entrypoint python gridsense-api:ci -c "import app.main"
+
+  # ---------------------------------------------------------- required gate
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [hygiene, lint, simulator, ingestion, api, e2e, docker]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All jobs passed
+        run: |
+          echo '${{ toJSON(needs) }}'
+          if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}; then
+            echo "::error::At least one CI job did not succeed."
+            exit 1
+          fi
