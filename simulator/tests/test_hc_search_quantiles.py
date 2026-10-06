@@ -67,3 +67,30 @@ def test_min_samples_for_p10_at_95_percent_is_36() -> None:
     from gridsense_sim.hosting_capacity import min_samples_for_ci
 
     assert min_samples_for_ci(0.10, 0.95) == 36
+
+
+def test_all_methods_share_the_same_search_defaults() -> None:
+    """R12: one set of search controls makes the comparison controlled."""
+    import inspect
+
+    from gridsense_sim.hosting_capacity import (
+        SEARCH_DEFAULTS,
+        estimate_hosting_capacity_stochastic,
+        find_hosting_capacity_deterministic,
+        find_hosting_capacity_qsts,
+    )
+
+    for fn in (find_hosting_capacity_deterministic, estimate_hosting_capacity_stochastic,
+               find_hosting_capacity_qsts):
+        params = inspect.signature(fn).parameters
+        for name in ("tolerance", "max_expansions", "max_bisections"):
+            assert params[name].default == getattr(SEARCH_DEFAULTS, name), (fn.__name__, name)
+
+
+def test_bisect_within_requires_a_valid_bracket() -> None:
+    from gridsense_sim.hosting_capacity import bisect_within
+
+    out = bisect_within(lambda x: x > 0.3, 0.0, 1.0, tolerance=0.01)
+    assert out.resolved and out.lambda_max <= 0.3 < out.lambda_fail
+    with pytest.raises(ValueError):
+        bisect_within(lambda x: x > 0.3, 1.0, 0.5)

@@ -29,7 +29,7 @@ from .baseline import require_feasible_baseline
 from .conditions import DEFAULT_CRITICAL_LOAD_SCALE, StudyConditions, apply_load_scale
 from .limits import limits_for
 from .scope import voltage_scope_buses
-from .search import bisect_max_feasible
+from .search import SEARCH_DEFAULTS, bisect_max_feasible
 from .violations import check_violations
 
 
@@ -42,6 +42,7 @@ class DeterministicHCResult:
         lambda_fail: Smallest verified-infeasible penetration, ``None`` if unbounded.
         bounded: ``False`` means no violation was found up to the cap --
             ``lambda_max`` is then a lower bound, not a capacity.
+        resolved: ``True`` if the bracket closed within ``tolerance``.
         pv_mw_per_bus, total_pv_mw: PV at ``lambda_max``.
         binding_constraint: What fails first at ``lambda_fail``.
         reverse_power_flow_at_hc: Trafos exporting at ``lambda_max`` (MW, negative).
@@ -53,6 +54,7 @@ class DeterministicHCResult:
     lambda_max: float
     lambda_fail: float | None
     bounded: bool
+    resolved: bool
     pv_mw_per_bus: dict[int, float]
     total_pv_mw: float
     binding_constraint: str | None
@@ -68,9 +70,9 @@ def find_hosting_capacity(
     *,
     framework: str | None = None,
     load_scale: float = DEFAULT_CRITICAL_LOAD_SCALE,
-    tolerance: float = 0.01,
-    max_expansions: int = 20,
-    max_bisections: int = 40,
+    tolerance: float = SEARCH_DEFAULTS.tolerance,
+    max_expansions: int = SEARCH_DEFAULTS.max_expansions,
+    max_bisections: int = SEARCH_DEFAULTS.max_bisections,
 ) -> DeterministicHCResult:
     """Deterministic HC by monotone bisection on ``lambda_``.
 
@@ -130,6 +132,7 @@ def find_hosting_capacity(
         lambda_max=outcome.lambda_max,
         lambda_fail=outcome.lambda_fail,
         bounded=outcome.bounded,
+        resolved=outcome.resolved,
         pv_mw_per_bus=pv,
         total_pv_mw=round(sum(pv.values()), 6),
         binding_constraint=binding,

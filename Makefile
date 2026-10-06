@@ -83,9 +83,10 @@ hc-study: ## Deterministic + stochastic HC on cigre_lv under PRODIST (minutes)
 		--framework prodist_m8_bt --methods deterministic stochastic \
 		--output-dir $(HC_DIR) -v
 
-hc-qsts: ## QSTS on a 7-day horizon (~10 min with numba; 60 days takes > 1 h)
+hc-qsts: ## QSTS, 7 days at 5 min, load profile normalized to peak 1.0 (see R22)
 	$(PYTHON) scripts/run_hosting_capacity_study.py --network cigre_lv \
-		--methods qsts --qsts-total-steps 2016 --output-dir $(HC_DIR) -v
+		--methods qsts --qsts-total-steps 2016 --qsts-peak-load 1.0 \
+		--output-dir $(HC_DIR) -v
 
 hc-load: ## HC Parquet -> bronze.hosting_capacity_results (idempotent)
 	$(PYTHON) ingestion/load_hosting_capacity_to_timescale.py \

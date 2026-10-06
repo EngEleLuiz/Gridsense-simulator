@@ -71,6 +71,7 @@ class HostingCapacityResult(BaseModel):
     error: str | None = None
     is_comparable: bool = False
     is_bounded: bool = False
+    is_resolved: bool | None = None
     criterion_framework: str | None = None
     criterion_kind: str | None = None
     v_min_pu: float | None = None

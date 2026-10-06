@@ -118,6 +118,7 @@ def _run_deterministic(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
         "lambda_max": r.lambda_max,
         "lambda_fail": r.lambda_fail,
         "bounded": r.bounded,
+        "resolved": r.resolved,
         "total_pv_mw": r.total_pv_mw if r.bounded else None,
         "binding_constraint": r.binding_constraint,
         "conditions": asdict(r.conditions),
@@ -142,6 +143,7 @@ def _run_stochastic(
         "lambda_max": lam,
         "lambda_fail": None,
         "bounded": lam is not None,
+        "resolved": est.all_resolved,
         "total_pv_mw": None if lam is None else round(lam * est.total_nominal_load_mw, 6),
         "binding_constraint": None,
         "conditions": asdict(est.conditions),
@@ -173,10 +175,13 @@ def _run_qsts(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
         "lambda_max": r.lambda_max,
         "lambda_fail": r.lambda_fail,
         "bounded": r.bounded,
+        "resolved": r.resolved,
         "total_pv_mw": r.total_pv_mw if r.bounded else None,
         "binding_constraint": r.binding_constraint,
         "conditions": asdict(r.conditions),
         "criterion": r.criterion,
+        "search_strategy": r.strategy,
+        "peak_load_mult": r.peak_load_mult,
         "first_violating_step": r.first_violating_step,
         "total_steps": r.total_steps,
         "steps_per_day": r.steps_per_day,
@@ -336,6 +341,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--mc-include-scenarios", action="store_true")
     p.add_argument("--qsts-total-steps", type=int, default=DEFAULT_TOTAL_STEPS)
     p.add_argument("--qsts-steps-per-day", type=int, default=DEFAULT_STEPS_PER_DAY)
+    p.add_argument("--qsts-peak-load", type=float, default=None,
+                   help="Rescale the synthetic load profile so its peak equals this multiplier "
+                        "(e.g. 1.0: nominal load = peak demand). Without it, a 60-day cigre_lv "
+                        "series is baseline-infeasible (review finding R22). Recorded in params.")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
@@ -355,6 +364,7 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         (0 <= args.mc_size_dispersion < 1, "--mc-size-dispersion must be in [0, 1)"),
         (args.qsts_total_steps >= 1, "--qsts-total-steps must be >= 1"),
         (args.qsts_steps_per_day >= 1, "--qsts-steps-per-day must be >= 1"),
+        (args.qsts_peak_load is None or args.qsts_peak_load > 0, "--qsts-peak-load must be > 0"),
     ]
     for ok, message in checks:
         if not ok:
@@ -402,6 +412,7 @@ def main(argv: list[str] | None = None) -> None:
             "total_steps": args.qsts_total_steps,
             "steps_per_day": args.qsts_steps_per_day,
             "profile_seed": args.seed,
+            "peak_load_mult": args.qsts_peak_load,
         },
         stochastic_alpha=args.mc_alpha,
         include_stochastic_scenarios=args.mc_include_scenarios,

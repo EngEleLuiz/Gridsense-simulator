@@ -39,6 +39,7 @@ select
     hc_lambda_ci_high,
     n_scenarios,
     n_censored,
+    is_resolved,
     qsts_criterion,
     qsts_total_steps,
     qsts_steps_per_day,

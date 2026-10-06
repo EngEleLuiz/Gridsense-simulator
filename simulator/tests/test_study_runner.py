@@ -113,3 +113,8 @@ def test_invalid_arguments_fail_before_any_power_flow(monkeypatch) -> None:
         with pytest.raises(SystemExit) as info:
             study.main(["--network", "cigre_lv", *extra])
         assert info.value.code == 2, extra
+
+
+def test_payload_carries_resolved_flag() -> None:
+    for rec in _records():
+        assert json.loads(rec["raw_value"])["resolved"] is True

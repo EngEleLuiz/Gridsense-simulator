@@ -13,6 +13,7 @@
 --
 -- is_comparable is the single gate every consumer must use:
 --   schema_version >= 2 AND status = 'ok' AND bounded
+--   AND the bisection bracket closed (resolved; absent in early v2 rows)
 --   AND, for stochastic rows, a finite two-sided confidence interval.
 -- The CI condition (review finding R05) exists because F^-1(alpha) from
 -- too few scenarios is just the smallest sample: with alpha = 0.10 the
@@ -73,6 +74,7 @@ typed as (
         (raw_value ->> 'hc_mw_p50')::double precision as total_pv_mw_p50,
         (raw_value ->> 'n_scenarios')::integer as n_scenarios,
         (raw_value ->> 'n_censored')::integer as n_censored,
+        (raw_value ->> 'resolved')::boolean as is_resolved,
 
         -- qsts
         raw_value ->> 'criterion' as qsts_criterion,
@@ -95,6 +97,7 @@ gated as (
             schema_version >= 2
             and status = 'ok'
             and is_bounded
+            and coalesce(is_resolved, true)
             and (
                 method <> 'stochastic'
                 or (hc_lambda_ci_low is not null and hc_lambda_ci_high is not null)
