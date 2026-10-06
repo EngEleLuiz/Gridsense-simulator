@@ -48,3 +48,22 @@ def test_quantile_ci_contains_true_quantile_for_uniform_samples() -> None:
 def test_quantile_ci_reports_missing_lower_bound_when_n_too_small() -> None:
     q = quantile_with_ci([1.0, 2.0, 3.0, 4.0, 5.0], 0.10, 0.95)
     assert q.low is None and q.achieved_coverage is None
+
+
+@pytest.mark.parametrize("q", [0.05, 0.10, 0.25, 0.5])
+def test_min_samples_for_ci_is_exactly_the_threshold(q: float) -> None:
+    """n_min yields both bounds; n_min - 1 lacks at least one (R05/R09)."""
+    from gridsense_sim.hosting_capacity import min_samples_for_ci
+
+    n = min_samples_for_ci(q, 0.95)
+    xs = list(np.linspace(0, 1, n))
+    ok = quantile_with_ci(xs, q, 0.95)
+    assert ok.low is not None and ok.high is not None
+    short = quantile_with_ci(xs[:-1], q, 0.95)
+    assert short.low is None or short.high is None
+
+
+def test_min_samples_for_p10_at_95_percent_is_36() -> None:
+    from gridsense_sim.hosting_capacity import min_samples_for_ci
+
+    assert min_samples_for_ci(0.10, 0.95) == 36

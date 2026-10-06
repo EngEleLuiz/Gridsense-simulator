@@ -21,6 +21,11 @@ Every ``raw_value`` now carries the same envelope:
 
 A failed method is **recorded**, not crashed on: "PRODIST at nominal
 load is infeasible before any PV" is a result the dissertation needs.
+Any other exception in one method (review finding R08) is recorded as
+``status = "error"`` with its type and message, so the methods that did
+finish are still written; the script then exits with code 1.
+
+Arguments are validated before any power flow runs (finding R09).
 
 For ``stochastic``, ``lambda_max``/``total_pv_mw`` hold ``F^-1(alpha)``
 (``alpha`` recorded), i.e. the conservative stochastic HC; the legacy
@@ -38,6 +43,7 @@ import argparse
 import json
 import logging
 import math
+import sys
 import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -56,6 +62,7 @@ from gridsense_sim.hosting_capacity import (
     AdoptionModel,
     HostingCapacityError,
     estimate_hosting_capacity_stochastic,
+    min_samples_for_ci,
     find_hosting_capacity_deterministic,
     find_hosting_capacity_qsts,
 )
@@ -226,6 +233,14 @@ def build_records(
                 conditions=_failed_conditions(network_name, params, method),
             )
             logger.warning("%s: %s", method, exc)
+        except Exception as exc:  # noqa: BLE001 -- record, never lose sibling results
+            payload.update(
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+                bounded=False,
+                conditions=_failed_conditions(network_name, params, method),
+            )
+            logger.exception("%s failed; recorded as status='error'", method)
         else:
             logger.info(
                 "%s: lambda_max=%s total_pv_mw=%s binding=%s",
@@ -247,7 +262,10 @@ def build_records(
 def _failed_conditions(network: str, params: dict, method: str) -> dict:
     """Criterion and operating point of a failed run, so the failure is
     still attributable (e.g. "PRODIST at nominal load: infeasible")."""
-    lim = limits_for(network, params.get("framework"))
+    try:
+        lim = limits_for(network, params.get("framework"))
+    except ValueError:
+        return {"network_name": network, "framework": params.get("framework")}
     return {
         "network_name": network,
         "framework": lim.framework,
@@ -320,7 +338,39 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--qsts-steps-per-day", type=int, default=DEFAULT_STEPS_PER_DAY)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("-v", "--verbose", action="store_true")
-    return p.parse_args(argv)
+    args = p.parse_args(argv)
+    _validate_args(p, args)
+    return args
+
+
+def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Reject invalid arguments before any power flow runs (finding R09)."""
+    checks = [
+        (args.load_scale > 0, "--load-scale must be > 0"),
+        (args.tolerance > 0, "--tolerance must be > 0"),
+        (0 < args.mc_alpha < 1, "--mc-alpha must be in (0, 1)"),
+        (args.mc_n_scenarios >= 1, "--mc-n-scenarios must be >= 1"),
+        (0 < args.mc_adoption_min <= args.mc_adoption_max <= 1,
+         "--mc-adoption-min/max must satisfy 0 < min <= max <= 1"),
+        (0 <= args.mc_size_dispersion < 1, "--mc-size-dispersion must be in [0, 1)"),
+        (args.qsts_total_steps >= 1, "--qsts-total-steps must be >= 1"),
+        (args.qsts_steps_per_day >= 1, "--qsts-steps-per-day must be >= 1"),
+    ]
+    for ok, message in checks:
+        if not ok:
+            parser.error(message)
+
+
+def _warn_underpowered(args: argparse.Namespace) -> None:
+    if "stochastic" not in args.methods:
+        return
+    needed = min_samples_for_ci(args.mc_alpha)
+    if args.mc_n_scenarios < needed:
+        logger.warning(
+            "--mc-n-scenarios %d < %d: no 95%% CI for the %.0f%% quantile; the "
+            "stochastic row will be recorded but not comparable.",
+            args.mc_n_scenarios, needed, 100 * args.mc_alpha,
+        )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -329,6 +379,7 @@ def main(argv: list[str] | None = None) -> None:
         level=logging.INFO if args.verbose else logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    _warn_underpowered(args)
     common = {"framework": args.framework, "tolerance": args.tolerance}
     records = build_records(
         network_name=args.network,
@@ -356,6 +407,10 @@ def main(argv: list[str] | None = None) -> None:
         include_stochastic_scenarios=args.mc_include_scenarios,
     )
     write_records_to_parquet(records, args.output_dir)
+    failed = [r["method"] for r in records if json.loads(r["raw_value"])["status"] == "error"]
+    if failed:
+        logger.error("Method(s) %s failed with an unexpected error (rows written).", failed)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

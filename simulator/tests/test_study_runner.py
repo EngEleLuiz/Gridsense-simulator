@@ -63,3 +63,53 @@ def test_parquet_roundtrip(tmp_path) -> None:
     rows = pq.read_table(path).to_pylist()
     assert rows[0]["method"] == "deterministic"
     assert json.loads(rows[0]["raw_value"])["schema_version"] == 2
+
+
+def test_unexpected_error_is_recorded_and_sibling_results_survive() -> None:
+    """R08 regression: a non-HostingCapacityError in one method used to
+    propagate out of build_records and discard the methods already run."""
+    recs = _records(methods=["deterministic", "qsts"], qsts_kwargs={"total_steps": 0})
+    by_method = {r["method"]: json.loads(r["raw_value"]) for r in recs}
+    assert by_method["deterministic"]["status"] == "ok"
+    assert by_method["qsts"]["status"] == "error"
+    assert by_method["qsts"]["error"].startswith("ValueError")
+    assert by_method["qsts"]["bounded"] is False
+
+
+def test_main_exits_nonzero_but_writes_rows_when_a_method_errors(tmp_path, monkeypatch) -> None:
+    def boom(*_a, **_k):
+        raise RuntimeError("simulated crash")
+
+    monkeypatch.setattr(study, "_run_stochastic", boom)
+    import pytest
+
+    with pytest.raises(SystemExit) as info:
+        study.main(["--network", "cigre_lv", "--methods", "deterministic", "stochastic",
+                    "--tolerance", "0.05", "--output-dir", str(tmp_path)])
+    assert info.value.code == 1
+    rows = [r for f in tmp_path.rglob("*.parquet") for r in pq.read_table(f).to_pylist()]
+    assert {r["method"] for r in rows} == {"deterministic", "stochastic"}
+
+
+def test_invalid_arguments_fail_before_any_power_flow(monkeypatch) -> None:
+    """R09 regression: --mc-alpha 1.5 used to fail only after the Monte Carlo."""
+    import pytest
+
+    def must_not_run(*_a, **_k):
+        raise AssertionError("an estimator ran before argument validation")
+
+    monkeypatch.setattr(study, "build_records", must_not_run)
+    bad_args = [
+        ["--mc-alpha", "1.5"],
+        ["--mc-alpha", "0"],
+        ["--mc-n-scenarios", "0"],
+        ["--mc-adoption-min", "0.8", "--mc-adoption-max", "0.5"],
+        ["--mc-size-dispersion", "1.0"],
+        ["--qsts-total-steps", "0"],
+        ["--load-scale", "0"],
+        ["--tolerance", "-0.1"],
+    ]
+    for extra in bad_args:
+        with pytest.raises(SystemExit) as info:
+            study.main(["--network", "cigre_lv", *extra])
+        assert info.value.code == 2, extra

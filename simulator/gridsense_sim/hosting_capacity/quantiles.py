@@ -50,6 +50,25 @@ def empirical_quantile(sorted_values: Sequence[float], q: float) -> float:
     return float(sorted_values[k - 1])
 
 
+def min_samples_for_ci(q: float, confidence: float = 0.95) -> int:
+    """Smallest ``n`` for which :func:`quantile_with_ci` returns both bounds.
+
+    The lower bound needs ``P(B = 0) = (1 - q)^n <= delta/2`` and the upper
+    bound ``P(B = n) = q^n <= delta/2`` (``delta = 1 - confidence``). For
+    ``q = 0.10`` at 95% this is 36 -- the threshold the stochastic study
+    must reach before its HC is comparable (review finding R05).
+    """
+    if not 0.0 < q < 1.0:
+        raise ValueError("q must be in (0, 1).")
+    if not 0.0 < confidence < 1.0:
+        raise ValueError("confidence must be in (0, 1).")
+    half = (1.0 - confidence) / 2.0
+    return max(
+        math.ceil(math.log(half) / math.log(1.0 - q)),
+        math.ceil(math.log(half) / math.log(q)),
+    )
+
+
 def quantile_with_ci(values: Sequence[float], q: float, confidence: float = 0.95) -> QuantileEstimate:
     """Estimate the q-quantile of ``values`` with a distribution-free CI."""
     if not 0.0 < confidence < 1.0:
