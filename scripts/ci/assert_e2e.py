@@ -7,6 +7,8 @@ real runner, loader and dbt models have run against a real database:
 * every HC method produced at least one comparable row;
 * a failed study (PRODIST at nominal load) is kept as a status row and
   is never exposed as a capacity;
+* an under-powered stochastic study (no finite CI) is kept for audit but
+  never flagged comparable;
 * Silver/Gold are populated for every simulated network;
 * when TimescaleDB is present, the hypertables were really created.
 
@@ -45,6 +47,13 @@ CHECKS: list[tuple[str, str, Callable[[list], bool]]] = [
         "select count(*) from public_gold.mart_hosting_capacity where is_comparable "
         "and not (total_pv_mw_comparable > 0 and total_pv_mw_comparable < 'Infinity')",
         lambda r: r[0][0] == 0,
+    ),
+    (
+        "stochastic rows are comparable only with a finite CI (R05)",
+        "select count(*) filter (where is_comparable and hc_lambda_ci_low is null), "
+        "count(*) filter (where not is_comparable and status = 'ok' and hc_lambda_ci_low is null) "
+        "from public_gold.mart_hosting_capacity where method = 'stochastic'",
+        lambda r: r[0][0] == 0 and r[0][1] >= 1,
     ),
     (
         "silver voltage facts exist for every simulated network",

@@ -8,6 +8,7 @@
 -- methods). Legacy (v1) rows are kept with is_comparable = false and
 -- total_pv_mw_comparable = NULL -- see stg_hosting_capacity_results.sql.
 --
+-- Stochastic rows are comparable only with a finite two-sided CI (R05).
 -- Stochastic rows: total_pv_mw_comparable = F^-1(hc_alpha) of the
 -- critical penetration (conservative), total_pv_mw_p50 = median,
 -- [hc_lambda_ci_low, hc_lambda_ci_high] = distribution-free CI.

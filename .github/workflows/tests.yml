@@ -252,6 +252,8 @@ jobs:
           run --methods qsts --qsts-total-steps 24 --qsts-steps-per-day 24 --tolerance 0.1 -v
           # A study that MUST be recorded as baseline_infeasible, never as a capacity
           run --framework prodist_m8_bt --load-scale 1.0 --methods deterministic -v
+          # An under-powered stochastic study (n=8: no 95% CI for p10) -- kept, never comparable
+          run --framework prodist_m8_bt --methods stochastic --mc-n-scenarios 8 --tolerance 0.05 -v
 
       - name: Load HC results into TimescaleDB
         run: /tmp/sim/bin/python ingestion/load_hosting_capacity_to_timescale.py --results-dir "$WORK/hc" --db-url "$DB_URL" -v

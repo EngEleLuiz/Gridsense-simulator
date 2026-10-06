@@ -12,7 +12,12 @@
 --      F^-1(alpha) of the critical penetration.
 --
 -- is_comparable is the single gate every consumer must use:
---   schema_version >= 2 AND status = 'ok' AND bounded.
+--   schema_version >= 2 AND status = 'ok' AND bounded
+--   AND, for stochastic rows, a finite two-sided confidence interval.
+-- The CI condition (review finding R05) exists because F^-1(alpha) from
+-- too few scenarios is just the smallest sample: with alpha = 0.10 the
+-- 95% interval has no lower bound until n >= 36. Such a row is kept for
+-- audit but never presented as a capacity.
 -- total_pv_mw_comparable is NULL whenever is_comparable is false, so
 -- no dashboard can plot an invalid number by accident. The raw value
 -- is still available as total_pv_mw_reported.
@@ -80,12 +85,26 @@ typed as (
 
     from source
 
+),
+
+gated as (
+
+    select
+        *,
+        (
+            schema_version >= 2
+            and status = 'ok'
+            and is_bounded
+            and (
+                method <> 'stochastic'
+                or (hc_lambda_ci_low is not null and hc_lambda_ci_high is not null)
+            )
+        ) as is_comparable
+    from typed
+
 )
 
 select
     *,
-    (schema_version >= 2 and status = 'ok' and is_bounded) as is_comparable,
-    case
-        when schema_version >= 2 and status = 'ok' and is_bounded then total_pv_mw_reported
-    end as total_pv_mw_comparable
-from typed
+    case when is_comparable then total_pv_mw_reported end as total_pv_mw_comparable
+from gated
