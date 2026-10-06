@@ -66,6 +66,12 @@ CHECKS: list[tuple[str, str, Callable[[list], bool]]] = [
         lambda r: r[0][0] == 0,
     ),
     (
+        "slack/generator buses are out of scope and never flagged (R07)",
+        "select count(*) filter (where is_in_scope), count(*) filter (where is_voltage_violation) "
+        "from public_silver.fct_bus_voltage where network = 'case14' and bus_id in (0, 1, 2, 5, 7)",
+        lambda r: r[0][0] == 0 and r[0][1] == 0,
+    ),
+    (
         "gold daily KPIs populated",
         "select count(*) from public_gold.mart_grid_kpis_daily",
         lambda r: r[0][0] > 0,

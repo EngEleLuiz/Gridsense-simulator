@@ -27,6 +27,14 @@
 -- capacity code should stay aligned with; keep them in sync by hand
 -- if the physical limits ever change.
 --
+-- Voltage scope (review finding R07): only customer service points are
+-- judged. Slack, voltage-controlled generator and (in cigre_lv) MV buses
+-- are excluded, exactly as hosting_capacity/scope.py does. The list of
+-- in-scope buses is the network_voltage_scope seed, generated from the
+-- Python rule by scripts/generate_voltage_scope_seed.py and checked by
+-- simulator/tests/test_hc_cross_layer.py. Out-of-scope readings are
+-- kept (is_in_scope = false) but are never a violation.
+--
 -- If a network appears in stg_grid_telemetry with no matching row in
 -- the seed, network_v_min_pu/network_v_max_pu are NULL for those
 -- rows and is_voltage_violation is NULL rather than silently falling
@@ -64,6 +72,18 @@ with_limits as (
     left join {{ ref('network_voltage_limits') }} as limits
         on unnested.network = limits.network
 
+),
+
+with_scope as (
+
+    select
+        with_limits.*,
+        scope.bus_id is not null as is_in_scope
+    from with_limits
+    left join {{ ref('network_voltage_scope') }} as scope
+        on with_limits.network = scope.network
+       and with_limits.bus_id = scope.bus_id
+
 )
 
 select
@@ -74,5 +94,9 @@ select
     voltage_pu,
     network_v_min_pu,
     network_v_max_pu,
-    (voltage_pu < network_v_min_pu or voltage_pu > network_v_max_pu) as is_voltage_violation
-from with_limits
+    is_in_scope,
+    case
+        when not is_in_scope then false
+        else (voltage_pu < network_v_min_pu or voltage_pu > network_v_max_pu)
+    end as is_voltage_violation
+from with_scope

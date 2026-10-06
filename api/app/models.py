@@ -35,6 +35,7 @@ class HourlyVoltageQuality(BaseModel):
     min_voltage_pu: float
     max_voltage_pu: float
     stddev_voltage_pu: float | None = None
+    is_in_scope: bool | None = None
     n_readings: int
     n_violations: int
     violation_rate_pct: float | None = None

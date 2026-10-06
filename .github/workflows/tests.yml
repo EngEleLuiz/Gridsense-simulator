@@ -67,6 +67,7 @@ jobs:
         run: |
           missing=0
           for f in Makefile docker-compose.yml transform/seeds/network_voltage_limits.csv \
+                   transform/seeds/network_voltage_scope.csv scripts/generate_voltage_scope_seed.py \
                    scripts/run_hosting_capacity_study.py scripts/ci/jsonl_to_bronze.py \
                    scripts/ci/assert_e2e.py; do
             [ -f "$f" ] || { echo "::error file=$f::Required file is missing"; missing=1; }

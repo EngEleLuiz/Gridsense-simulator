@@ -14,7 +14,7 @@ DBT := $(DBT_ENV) dbt --no-use-colors
 DBT_ARGS := --project-dir transform --profiles-dir transform
 
 .PHONY: help up down logs status produce consume-bronze query-bronze \
-        load-timescale dbt-seed dbt-run dbt-test dbt-build dbt-docs \
+        load-timescale seed-scope dbt-seed dbt-run dbt-test dbt-build dbt-docs \
         hc-study hc-qsts hc-load api-run \
         test test-simulator test-hc test-ingestion test-api lint
 
@@ -58,6 +58,9 @@ load-timescale: ## Bronze Parquet -> bronze.raw_events (idempotent)
 		--bronze-dir data/bronze --db-url $(DB_URL) -v
 
 # ------------------------------------------------------------------ dbt
+seed-scope: ## Regenerate transform/seeds/network_voltage_scope.csv from hosting_capacity/scope.py
+	$(PYTHON) scripts/generate_voltage_scope_seed.py
+
 dbt-seed: ## Load seeds (network_voltage_limits.csv)
 	$(DBT) seed $(DBT_ARGS)
 

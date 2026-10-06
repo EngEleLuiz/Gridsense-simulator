@@ -4,12 +4,16 @@ models:
   - name: fct_bus_voltage
     description: >
       One row per bus per simulation step (long/tidy format).
-      is_voltage_violation flags readings outside the ANSI C84.1
-      Range A operational tolerance (0.95-1.05 pu).
+      is_voltage_violation flags in-scope readings outside the network's
+      own voltage band (network_voltage_limits seed); buses outside the
+      voltage scope (slack, generator, MV -- network_voltage_scope seed)
+      are kept with is_in_scope = false and are never a violation.
     columns:
       - name: bus_id
         tests: [not_null]
       - name: voltage_pu
+        tests: [not_null]
+      - name: is_in_scope
         tests: [not_null]
       - name: is_voltage_violation
         tests: [not_null]

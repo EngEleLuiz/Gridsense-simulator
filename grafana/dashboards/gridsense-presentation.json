@@ -150,7 +150,7 @@
 
     {
       "id": 6,
-      "title": "Bus Voltage Classification — Why Some Buses Show 100% \"Violation\"",
+      "title": "Bus Voltage Classification — In-Scope vs Excluded Buses",
       "type": "table",
       "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
       "gridPos": { "h": 12, "w": 24, "x": 0, "y": 9 },
@@ -205,7 +205,7 @@
           "refId": "A",
           "format": "table",
           "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
-          "rawSql": "SELECT v.bus_id, CASE WHEN v.bus_id = 0 THEN 'Slack' WHEN v.bus_id IN (1,2,5,7) THEN 'Generator (PV)' ELSE 'Load' END AS bus_type, round(avg(v.avg_voltage_pu)::numeric, 4) AS voltage_pu, round(avg(v.violation_rate_pct)::numeric, 1) AS violation_pct FROM public_gold.mart_voltage_quality_hourly v WHERE v.network = '$network' GROUP BY v.bus_id ORDER BY v.bus_id",
+          "rawSql": "SELECT v.bus_id, CASE WHEN bool_or(v.is_in_scope) THEN 'In scope (service point)' ELSE 'Excluded (slack / generator / MV)' END AS bus_type, round(avg(v.avg_voltage_pu)::numeric, 4) AS voltage_pu, round(avg(v.violation_rate_pct)::numeric, 1) AS violation_pct FROM public_gold.mart_voltage_quality_hourly v WHERE v.network = '$network' GROUP BY v.bus_id ORDER BY v.bus_id",
           "editorMode": "code",
           "rawQuery": true
         }
@@ -219,7 +219,7 @@
       "gridPos": { "h": 6, "w": 24, "x": 0, "y": 21 },
       "options": {
         "mode": "markdown",
-        "content": "### Key finding\n\nOf the 14 buses, **5 are voltage-controlled** (1 slack + 4 generator buses per the standard IEEE 14-bus definition). Three of these five hold fixed setpoints **above** the 1.05 p.u. ANSI C84.1 operational limit by design (1.06, 1.07, 1.09 p.u.) — their 100% \"violation\" rate is a setpoint artifact, not a fault.\n\nThe remaining **9 buses are pure load buses**, with no local voltage support. Of those, **4 still show a 100% violation rate** (buses 6, 8, 10, 11) purely from voltage drop across the meshed network — this is the genuine physical phenomenon that motivates a hosting-capacity study: without local reactive support (e.g. from distributed PV inverters), these buses have essentially zero remaining voltage headroom before any additional injection or withdrawal pushes them further out of range."
+        "content": "### Key finding\n\nOf the 14 buses, **5 are voltage-controlled** (1 slack + 4 generator buses per the standard IEEE 14-bus definition). Their voltages are setpoints, not results (three sit **above** 1.05 p.u. by design: 1.06, 1.07, 1.09 p.u.), so they are **excluded from the voltage scope** and never counted as violations — the same rule the hosting-capacity code applies.\n\nThe remaining **9 buses are pure load buses**, with no local voltage support. Several of those still show high violation rates purely from voltage conditions across the meshed network — this is the genuine physical phenomenon that motivates a hosting-capacity study: without local reactive support (e.g. from distributed PV inverters), these buses have essentially zero remaining voltage headroom before any additional injection or withdrawal pushes them further out of range."
       }
     },
 

@@ -45,3 +45,14 @@ def test_get_top_violations_rejects_rate_above_100(client_factory) -> None:
     client, _ = client_factory([[]])
     resp = client.get("/api/v1/voltage/violations", params={"min_rate": 150})
     assert resp.status_code == 422
+
+
+def test_out_of_scope_bus_is_returned_with_null_rate(client_factory) -> None:
+    """R07: slack/generator/MV buses carry is_in_scope = false and no rate."""
+    row = _sample_voltage_row(bus_id=0)
+    row.update(is_in_scope=False, violation_rate_pct=None, n_violations=0)
+    client, fake = client_factory([[row]])
+    body = client.get("/api/v1/voltage/hourly", params={"bus_id": 0}).json()
+    assert body[0]["is_in_scope"] is False
+    assert body[0]["violation_rate_pct"] is None
+    assert "is_in_scope" in fake.calls[0][0]
