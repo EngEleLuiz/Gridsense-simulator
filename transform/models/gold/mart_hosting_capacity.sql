@@ -1,32 +1,48 @@
 {{ config(materialized='table') }}
 
--- Side-by-side comparison of the three hosting-capacity methodologies
--- (deterministic, stochastic, QSTS) for the same network -- the core
--- scientific comparison the dissertation is built around. One row
--- per (network, method, run_id); the API and Grafana's third
--- dashboard read this directly.
+-- Side-by-side comparison of the three hosting-capacity methods.
+-- One row per (network, method, run_id).
 --
--- total_pv_mw_comparable is the only column meant for a naive
--- side-by-side number comparison across methods today. Read
--- stochastic's value there with care: at the default Monte Carlo
--- sampling range, it's a lower bound under an arbitrary PV-size
--- budget, not yet a ceiling comparable to the deterministic/QSTS
--- numbers -- see stg_hosting_capacity_results.sql and
--- hosting_capacity/stochastic.py's module docstring. Recalibration
--- is deferred to Phase 8 (real PV-sizing data).
+-- Consumers MUST filter on is_comparable and compare only rows with
+-- the same criterion_framework (and the same load_scale for snapshot
+-- methods). Legacy (v1) rows are kept with is_comparable = false and
+-- total_pv_mw_comparable = NULL -- see stg_hosting_capacity_results.sql.
+--
+-- Stochastic rows: total_pv_mw_comparable = F^-1(hc_alpha) of the
+-- critical penetration (conservative), total_pv_mw_p50 = median,
+-- [hc_lambda_ci_low, hc_lambda_ci_high] = distribution-free CI.
 
 select
     network,
     method,
     run_id,
     run_timestamp,
+    schema_version,
+    status,
+    error,
+    is_comparable,
+    is_bounded,
+    criterion_framework,
+    criterion_kind,
+    v_min_pu,
+    v_max_pu,
+    load_scale,
     total_pv_mw_comparable,
-    total_pv_mw_p95,
+    total_pv_mw_reported,
+    total_pv_mw_p50,
     lambda_max,
+    lambda_fail,
     binding_constraint,
-    violation_rate,
-    n_trials,
+    hc_alpha,
+    hc_lambda_ci_low,
+    hc_lambda_ci_high,
+    n_scenarios,
+    n_censored,
+    qsts_criterion,
     qsts_total_steps,
-    qsts_steps_per_day
+    qsts_steps_per_day,
+    qsts_first_violating_step,
+    git_commit,
+    git_dirty
 from {{ ref('stg_hosting_capacity_results') }}
 order by network, run_timestamp desc, method

@@ -221,9 +221,18 @@ methodologies against a network and pushes the comparison into the
 same Gold layer the API and dashboard #3 read from:
 
 ```bash
+<<<<<<< HEAD
 # Run the three methods against cigre_lv (writes Parquet)
 python scripts/run_hosting_capacity_study.py \
   --network cigre_lv --methods deterministic stochastic qsts -v
+=======
+# Run the three methods against cigre_lv (writes Parquet).
+# --framework: ansi_c84_range_a | prodist_m8_bt | en50160_envelope
+# --load-scale: critical (minimum-load) operating point, default 0.25
+python scripts/run_hosting_capacity_study.py \
+  --network cigre_lv --framework prodist_m8_bt \
+  --methods deterministic stochastic qsts -v
+>>>>>>> phase-6-hosting-capacity
 
 # QSTS is by far the most expensive: it defaults to a 60-day horizon
 # (up to ~350k power flows for one answer see hosting_capacity/
@@ -239,12 +248,23 @@ cd transform && dbt run && dbt test && cd ..
 docker compose restart grafana
 ```
 
+<<<<<<< HEAD
 Read the `stochastic` method's numbers with care: at the default
 Monte Carlo sampling range, they're a lower bound under an arbitrary
 PV-size budget, not yet a ceiling comparable to the
 deterministic/QSTS results see
 `simulator/gridsense_sim/hosting_capacity/stochastic.py`'s module
 docstring.
+=======
+Interpreting results (payload v2, see `docs/CHANGES_phase6-bugfix.md`):
+compare only rows with `is_comparable = true` and the same
+`criterion_framework` (and `load_scale` for snapshot methods). The
+stochastic number is `F^-1(alpha)` of the critical penetration over
+random adoption scenarios, with a distribution-free confidence
+interval. A run that is infeasible before any PV is installed is
+recorded with `status = 'baseline_infeasible'`, never as a capacity.
+Rows from before this fix are kept as `legacy_invalid`.
+>>>>>>> phase-6-hosting-capacity
 
 ## Verify
 
@@ -280,18 +300,31 @@ curl "http://localhost:8000/api/v1/hosting-capacity/compare?network=cigre_lv"
 
 ```bash
 make test                  # simulator + ingestion + API unit tests (mocked, no Docker needed)
+<<<<<<< HEAD
+=======
+make test-hc               # hosting-capacity tests only
+>>>>>>> phase-6-hosting-capacity
 make dbt-test                # dbt data-quality tests (needs TimescaleDB running)
 ```
 
 The simulator, ingestion consumer, and API are all unit tested with
 fake dependency doubles (Kafka producer/consumer, DB session), so
 those suites run without Docker including the hosting-capacity
+<<<<<<< HEAD
 methods (`simulator/tests/test_hosting_capacity.py`) and the
+=======
+methods (`simulator/tests/test_hc_*.py`, one file per module) and the
+>>>>>>> phase-6-hosting-capacity
 `/api/v1/hosting-capacity/compare` endpoint
 (`api/tests/test_hosting_capacity.py`). The dbt test suite needs a
 live database since it validates real data, and includes network-
 aware voltage-limit checks and a hosting-capacity sanity test
+<<<<<<< HEAD
 (hosting capacity can't be physically negative) alongside the
+=======
+(non-negative capacity, ordered bisection bracket, completeness of
+comparable rows) alongside the
+>>>>>>> phase-6-hosting-capacity
 original Phase 3 tests.
 
 ## Shutting down

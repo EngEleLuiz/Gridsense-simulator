@@ -1,95 +1,170 @@
-"""Shared violation-checking logic for all three hosting-capacity
-methods. Runs one AC power flow and reports whether -- and where --
-any limit in a NetworkLimits was exceeded.
+"""Shared violation physics for all hosting-capacity methods.
 
-Using one function for all three methods is deliberate: it's what
-makes the deterministic/stochastic/QSTS comparison a controlled one.
-If each method re-implemented its own violation check, subtle
-differences (e.g. one method checking transformer loading and another
-forgetting to) would silently invalidate the comparison.
+One implementation for all three methods is what makes the comparison
+*controlled*: they can only differ in how they choose PV scenarios,
+never in how a scenario is judged.
+
+The module separates two steps so that a future surrogate oracle
+(Phase 7, ``HybridOracle``) can replace the expensive one without
+touching the judgement:
+
+* :func:`run_power_flow` -- the expensive physics call;
+* :func:`assess_violations` -- a pure function of ``net.res_*``.
+
+:func:`check_violations` composes both and is what the estimators use.
+
+Binding-constraint ranking (review finding C10)
+-----------------------------------------------
+The old ranking compared ``|vm - 1|`` (e.g. 0.11) with
+``loading / 100`` (e.g. 1.005), so *any* overload outranked *any*
+overvoltage. Every violation is now ranked by its **relative
+exceedance beyond its own limit**, a dimensionless number that is
+comparable across types:
+
+* overvoltage:  ``(vm - v_max) / v_max``
+* undervoltage: ``(v_min - vm) / v_min``
+* overload:     ``(loading - limit) / limit``
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Iterable
 
 import pandapower as pp
 
 from .limits import NetworkLimits
+from .scope import voltage_scope_buses
 
 
 @dataclass
 class ViolationReport:
-    """Result of a single power-flow violation check."""
+    """Outcome of judging one power-flow state.
+
+    Attributes:
+        converged: Whether the AC power flow converged.
+        has_violation: True if any limit is exceeded **or** the power
+            flow did not converge (see :func:`check_violations`).
+        voltage_violations: bus -> vm_pu, buses in scope only.
+        line_violations: line -> loading_percent.
+        trafo_violations: trafo -> loading_percent.
+        reverse_power_flow: trafo -> p_hv_mw for trafos exporting to the
+            upstream grid (p_hv_mw < 0). Informational, not a violation.
+    """
 
     converged: bool
     has_violation: bool
-    voltage_violations: dict[int, float] = field(default_factory=dict)  # bus -> vm_pu
-    line_violations: dict[int, float] = field(default_factory=dict)  # line -> loading_percent
-    trafo_violations: dict[int, float] = field(default_factory=dict)  # trafo -> loading_percent
+    voltage_violations: dict[int, float] = field(default_factory=dict)
+    line_violations: dict[int, float] = field(default_factory=dict)
+    trafo_violations: dict[int, float] = field(default_factory=dict)
+    reverse_power_flow: dict[int, float] = field(default_factory=dict)
+    _limits: NetworkLimits | None = field(default=None, repr=False, compare=False)
+
+    def ranked_violations(self) -> list[tuple[float, str]]:
+        """All violations as ``(relative_exceedance, label)``, worst first."""
+        if self._limits is None:
+            raise RuntimeError("ViolationReport was built without limits; cannot rank.")
+        lim = self._limits
+        out: list[tuple[float, str]] = []
+        for bus, vm in self.voltage_violations.items():
+            if vm > lim.v_max_pu:
+                exc, kind = (vm - lim.v_max_pu) / lim.v_max_pu, "overvoltage"
+            else:
+                exc, kind = (lim.v_min_pu - vm) / lim.v_min_pu, "undervoltage"
+            out.append((exc, f"{kind}@bus_{bus} ({vm:.4f} pu)"))
+        for line, loading in self.line_violations.items():
+            exc = (loading - lim.max_line_loading_percent) / lim.max_line_loading_percent
+            out.append((exc, f"line_loading@line_{line} ({loading:.1f}%)"))
+        for trafo, loading in self.trafo_violations.items():
+            exc = (loading - lim.max_trafo_loading_percent) / lim.max_trafo_loading_percent
+            out.append((exc, f"trafo_loading@trafo_{trafo} ({loading:.1f}%)"))
+        return sorted(out, key=lambda c: c[0], reverse=True)
 
     def binding_constraint(self) -> str | None:
-        """Return a human-readable label for the first/worst violation.
+        """Label of the most-exceeded element, ``None`` if no violation.
 
-        The dissertation's Chapter 5 needs to say *where* hosting
-        capacity runs out, not just the MW number, so this picks the
-        single most-exceeded element across all three violation
-        types.
+        Non-convergence returns ``"power_flow_non_convergence"``: a
+        numerical (not physical) limit, but a valid reportable outcome.
         """
         if not self.has_violation:
             return None
         if not self.converged:
-            # Non-convergence is reported as a violation (see
-            # check_violations below) with all three violation dicts
-            # empty -- there's nothing to rank, but "the grid can't
-            # even solve at this penetration" is itself a valid,
-            # reportable binding constraint.
             return "power_flow_non_convergence"
-        candidates: list[tuple[float, str]] = []
-        for bus, vm_pu in self.voltage_violations.items():
-            candidates.append((abs(vm_pu - 1.0), f"voltage@bus_{bus} ({vm_pu:.4f} pu)"))
-        for line, loading in self.line_violations.items():
-            candidates.append((loading / 100.0, f"line_loading@line_{line} ({loading:.1f}%)"))
-        for trafo, loading in self.trafo_violations.items():
-            candidates.append((loading / 100.0, f"trafo_loading@trafo_{trafo} ({loading:.1f}%)"))
-        return max(candidates, key=lambda c: c[0])[1]
+        ranked = self.ranked_violations()
+        return ranked[0][1] if ranked else None
 
 
-def check_violations(net: pp.pandapowerNet, limits: NetworkLimits) -> ViolationReport:
-    """Run pp.runpp(net) and check the result against `limits`.
-
-    A non-converged power flow is reported as a violation (has_violation
-    == True, all violation dicts empty) rather than raised, since "the
-    grid can't even solve" is itself the binding constraint at that
-    penetration level -- treating it as a hard failure would break the
-    bisection search's assumption that it always gets a yes/no answer.
-    """
+def run_power_flow(net: pp.pandapowerNet) -> bool:
+    """Run an AC power flow in place. Returns ``False`` on non-convergence."""
     try:
         pp.runpp(net)
     except pp.LoadflowNotConverged:
-        return ViolationReport(converged=False, has_violation=True)
+        return False
+    return True
 
+
+def assess_violations(
+    net: pp.pandapowerNet,
+    limits: NetworkLimits,
+    voltage_buses: Iterable[int] | None = None,
+) -> ViolationReport:
+    """Judge the converged results already stored in ``net.res_*``.
+
+    Args:
+        net: Network with a converged power-flow result.
+        limits: Criterion to apply.
+        voltage_buses: Buses to voltage-check; defaults to
+            :func:`voltage_scope_buses`. Pass a precomputed tuple in hot
+            loops to avoid recomputing the scope.
+    """
+    scope = tuple(voltage_buses) if voltage_buses is not None else voltage_scope_buses(net, limits)
+    vm = net.res_bus["vm_pu"].reindex(list(scope))
     voltage_violations = {
-        int(bus): float(vm_pu)
-        for bus, vm_pu in net.res_bus["vm_pu"].items()
-        if vm_pu < limits.v_min_pu or vm_pu > limits.v_max_pu
+        int(bus): float(v)
+        for bus, v in vm.items()
+        if v < limits.v_min_pu or v > limits.v_max_pu
     }
     line_violations = {
-        int(line): float(loading)
-        for line, loading in net.res_line["loading_percent"].items()
-        if loading > limits.max_line_loading_percent
-    }
-    trafo_violations = {
-        int(trafo): float(loading)
-        for trafo, loading in net.res_trafo["loading_percent"].items()
-        if loading > limits.max_trafo_loading_percent
-    } if not net.res_trafo.empty else {}
-
-    has_violation = bool(voltage_violations or line_violations or trafo_violations)
+        int(i): float(x)
+        for i, x in net.res_line["loading_percent"].items()
+        if x > limits.max_line_loading_percent
+    } if not net.res_line.empty else {}
+    trafo_violations: dict[int, float] = {}
+    reverse: dict[int, float] = {}
+    if not net.res_trafo.empty:
+        trafo_violations = {
+            int(i): float(x)
+            for i, x in net.res_trafo["loading_percent"].items()
+            if x > limits.max_trafo_loading_percent
+        }
+        reverse = {
+            int(i): float(p)
+            for i, p in net.res_trafo["p_hv_mw"].items()
+            if p < 0.0
+        }
     return ViolationReport(
         converged=True,
-        has_violation=has_violation,
+        has_violation=bool(voltage_violations or line_violations or trafo_violations),
         voltage_violations=voltage_violations,
         line_violations=line_violations,
         trafo_violations=trafo_violations,
+        reverse_power_flow=reverse,
+        _limits=limits,
     )
+
+
+def check_violations(
+    net: pp.pandapowerNet,
+    limits: NetworkLimits,
+    voltage_buses: Iterable[int] | None = None,
+) -> ViolationReport:
+    """Run a power flow on ``net`` and judge it against ``limits``.
+
+    A non-converged power flow is reported as a violation (with empty
+    detail dicts) rather than raised: "the grid cannot be solved at
+    this penetration" is itself the binding outcome, and the bisection
+    needs a yes/no answer for every candidate.
+    """
+    if not run_power_flow(net):
+        return ViolationReport(converged=False, has_violation=True, _limits=limits)
+    return assess_violations(net, limits, voltage_buses)

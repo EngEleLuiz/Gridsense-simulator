@@ -1,41 +1,64 @@
-"""Hosting capacity analysis for distributed PV, using three classic
-methodologies: deterministic (bisection), stochastic (Monte Carlo),
-and QSTS (quasi-static time series).
+"""Hosting capacity of distributed PV by three methodologies.
 
-All three share the same violation physics (`violations.py`) and the
-same per-network limit table (`limits.py`), so results are directly
-comparable -- that controlled comparison is the dissertation's core
-contribution (see 02/03-Project-Overview.md and
-Analise-Comparativa-Trabalhos-Relacionados.md).
+* deterministic -- coordinated penetration, single snapshot at the
+  critical operating point;
+* stochastic   -- distribution of the critical penetration over random
+  uncoordinated adoption scenarios;
+* QSTS         -- coordinated penetration over a time series
+  (zero-tolerance criterion; duration criterion is S1 work).
 
-ASSUMPTION (not verified -- see NOTE TO AUTHOR in the dissertation
-draft, Chapter 3): all three methods assume monotonicity, i.e. that
-increasing PV penetration monotonically increases (or at worst does
-not decrease) violation severity. This holds for simple P-only PV
-injection without local Volt-VAr control. If Volt-VAr control is
-added later, this assumption must be re-verified before reusing the
-bisection search as-is.
+All three share ``limits`` (named regulatory frameworks), ``scope``
+(which buses are judged), ``violations`` (one physics/judgement
+implementation), ``baseline`` (PV = 0 gate) and ``search`` (one
+monotone bisection), which is what makes the comparison controlled.
+
+Units: ``lambda_`` is total PV / total nominal load in every method.
+
+ASSUMPTION: monotonicity of violation in lambda. It holds for P-only
+PV injection without Volt-VAr control; the baseline gate removes the
+load-driven case where it fails. Re-verify if Volt-VAr is added.
+
+No function in this package mutates the ``net`` passed by the caller.
 """
 
-from .allocation import PVAllocation, proportional_to_load
-from .deterministic import DeterministicHCResult, find_hosting_capacity as find_hosting_capacity_deterministic
-from .limits import NETWORK_LIMITS, NetworkLimits, limits_for
-from .qsts import QstsHCResult, find_hosting_capacity as find_hosting_capacity_qsts
-from .stochastic import StochasticHCResult, run_monte_carlo
-from .violations import ViolationReport, check_violations
+from .allocation import PVAllocation, apply_allocation, proportional_to_load
+from .conditions import DEFAULT_CRITICAL_LOAD_SCALE, StudyConditions
+from .deterministic import DeterministicHCResult
+from .deterministic import find_hosting_capacity as find_hosting_capacity_deterministic
+from .errors import BaselineInfeasibleError, HostingCapacityError, NoDaylightError
+from .limits import (
+    FRAMEWORKS,
+    NETWORK_LIMITS,
+    CriterionKind,
+    NetworkLimits,
+    VoltageFramework,
+    limits_for,
+)
+from .qsts import QstsHCResult
+from .qsts import find_hosting_capacity as find_hosting_capacity_qsts
+from .quantiles import QuantileEstimate, quantile_with_ci
+from .scope import voltage_scope_buses
+from .search import BisectionOutcome, bisect_max_feasible
+from .stochastic import (
+    AdoptionModel,
+    ScenarioResult,
+    StochasticHCEstimate,
+    StochasticHCResult,
+    estimate_hosting_capacity as estimate_hosting_capacity_stochastic,
+    run_monte_carlo,
+)
+from .timeseries import TimeSeries, build_synthetic_series
+from .violations import ViolationReport, assess_violations, check_violations, run_power_flow
 
 __all__ = [
-    "PVAllocation",
-    "proportional_to_load",
-    "DeterministicHCResult",
-    "find_hosting_capacity_deterministic",
-    "NETWORK_LIMITS",
-    "NetworkLimits",
-    "limits_for",
-    "QstsHCResult",
-    "find_hosting_capacity_qsts",
-    "StochasticHCResult",
-    "run_monte_carlo",
-    "ViolationReport",
-    "check_violations",
+    "AdoptionModel", "BaselineInfeasibleError", "BisectionOutcome", "CriterionKind",
+    "DEFAULT_CRITICAL_LOAD_SCALE", "DeterministicHCResult", "FRAMEWORKS",
+    "HostingCapacityError", "NETWORK_LIMITS", "NetworkLimits", "NoDaylightError",
+    "PVAllocation", "QstsHCResult", "QuantileEstimate", "ScenarioResult",
+    "StochasticHCEstimate", "StochasticHCResult", "StudyConditions", "TimeSeries",
+    "ViolationReport", "VoltageFramework", "apply_allocation", "assess_violations",
+    "bisect_max_feasible", "build_synthetic_series", "check_violations",
+    "estimate_hosting_capacity_stochastic", "find_hosting_capacity_deterministic",
+    "find_hosting_capacity_qsts", "limits_for", "proportional_to_load",
+    "quantile_with_ci", "run_monte_carlo", "run_power_flow", "voltage_scope_buses",
 ]

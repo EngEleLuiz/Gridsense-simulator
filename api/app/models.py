@@ -54,22 +54,42 @@ class HourlyLineLoading(BaseModel):
 class HostingCapacityResult(BaseModel):
     """One method's result for one hosting-capacity study run.
 
-    Method-specific fields are None when not applicable to that row's
-    method (see transform/models/staging/stg_hosting_capacity_results.sql).
-    total_pv_mw_comparable is the one field every method populates --
-    read stochastic's value there with care, it is not yet calibrated
-    to the same ceiling as the deterministic/qsts methods.
+    Mirrors ``gold.mart_hosting_capacity``. Only rows with
+    ``is_comparable = True`` carry ``total_pv_mw_comparable``; compare
+    such rows only when ``criterion_framework`` (and, for snapshot
+    methods, ``load_scale``) are equal. Method-specific fields are
+    ``None`` when not applicable.
     """
 
     network: str
     method: str
     run_id: str
     run_timestamp: datetime
+    schema_version: int = 1
+    status: str = "legacy_invalid"
+    error: str | None = None
+    is_comparable: bool = False
+    is_bounded: bool = False
+    criterion_framework: str | None = None
+    criterion_kind: str | None = None
+    v_min_pu: float | None = None
+    v_max_pu: float | None = None
+    load_scale: float | None = None
     total_pv_mw_comparable: float | None = None
-    total_pv_mw_p95: float | None = None
+    total_pv_mw_reported: float | None = None
+    total_pv_mw_p50: float | None = None
     lambda_max: float | None = None
+    lambda_fail: float | None = None
     binding_constraint: str | None = None
-    violation_rate: float | None = None
-    n_trials: int | None = None
+    hc_alpha: float | None = None
+    hc_lambda_ci_low: float | None = None
+    hc_lambda_ci_high: float | None = None
+    n_scenarios: int | None = None
+    n_censored: int | None = None
+    qsts_criterion: str | None = None
     qsts_total_steps: int | None = None
     qsts_steps_per_day: int | None = None
+    qsts_first_violating_step: int | None = None
+    git_commit: str | None = None
+    git_dirty: bool | None = None
+

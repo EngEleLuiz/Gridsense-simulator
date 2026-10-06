@@ -24,23 +24,24 @@ models:
 
   - name: stg_hosting_capacity_results
     description: >
-      Typed view over bronze.hosting_capacity_results. Method-specific
-      fields (lambda_max/binding_constraint for deterministic/qsts;
-      violation_rate/n_trials for stochastic; qsts_total_steps/
-      qsts_steps_per_day for qsts) are NULL when not applicable to
-      that row's method, never defaulted to zero.
+      Typed view over bronze.hosting_capacity_results (payload v1 legacy
+      and v2). is_comparable = schema_version >= 2 and status = 'ok' and
+      bounded; total_pv_mw_comparable is NULL whenever is_comparable is
+      false. See the model's header comment.
     columns:
       - name: network
         tests: [not_null]
       - name: method
-        description: "One of: deterministic, stochastic, qsts."
-        tests: [not_null]
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['deterministic', 'stochastic', 'qsts']
       - name: run_id
         tests: [not_null]
-      - name: total_pv_mw_comparable
-        description: >
-          The one field every method populates: deterministic/qsts
-          report total_pv_mw directly; stochastic reports its p50
-          here. See this model's own top-of-file comment for the
-          stochastic calibration caveat before comparing it directly
-          to the other two methods.
+      - name: status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['ok', 'baseline_infeasible', 'no_daylight', 'error', 'legacy_invalid']
+      - name: is_comparable
+        tests: [not_null]

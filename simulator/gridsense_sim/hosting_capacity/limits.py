@@ -1,85 +1,157 @@
-"""Per-network physical limits used as the hosting-capacity violation
-criterion.
+"""Voltage/thermal criteria that define a hosting-capacity violation.
 
-IMPORTANT: this is deliberately NOT a single global constant. The
-balanced transmission test cases (case14/39/57/118) use ANSI C84.1
-Range A (0.95-1.05 pu), which is also what the existing dbt model
-`transform/models/silver/fct_bus_voltage.sql` hardcodes today.
+Design (review finding C2)
+--------------------------
+The criterion is a *named regulatory framework*, never an anonymous
+pair of numbers, because the frameworks are not interchangeable:
 
-cigre_lv is a real low-voltage distribution feeder: at nominal load,
-with zero PV, several of its buses already sit at 0.93-0.94 pu (see
-the CLI run recorded when Phase 5 was validated). Using ANSI Range A
-for this network would flag "violations" that exist at baseline, with
-no PV added at all -- which makes a hosting-capacity search on top of
-it meaningless (every bus would show ~zero or negative capacity).
-CIGRE's own topology is designed against a wider tolerance; we use
-+-10% (0.90-1.10 pu) for it instead, per the Sept/2026 decision
-recorded when this module was created.
+``ansi_c84_range_a`` (0.95-1.05 pu)
+    ANSI C84.1 Range A, steady-state service voltage. Used for the
+    transmission test cases (case14/39/57/118).
+``prodist_m8_bt`` (0.92-1.05 pu)
+    ANEEL PRODIST Modulo 8, "adequada" range for LV 220/127 V
+    (202-231 V on a 220 V base). **Verify against the revision in force
+    before citing** -- tracked in the dissertation reference checklist.
+``en50160_envelope`` (0.90-1.10 pu)
+    EN 50160 +-10%. NOTE: in the standard this is a *statistical*
+    criterion (95% of 10-min mean values over one week). Applying it to
+    a single power-flow snapshot is a category error that the code
+    still permits (it is the historical default for ``cigre_lv``,
+    pending the advisor's decision) but flags via
+    :attr:`CriterionKind.STATISTICAL`, so every result carries the
+    caveat. It only becomes methodologically coherent inside a QSTS
+    duration criterion (tau_bar = 0.05), which is S1 work.
 
-TODO (tracked, not fixed here): `fct_bus_voltage.sql` still hardcodes
-0.95-1.05 for every network including cigre_lv. Once cigre_lv
-telemetry starts flowing through the pipeline, that dashboard-level
-flag will disagree with the hosting-capacity criterion used here. The
-fix is to make that dbt model network-aware (e.g. a
-`transform/seeds/network_voltage_limits.csv` seed joined by
-`network`), using the same limits as this module, so the Silver layer
-and the hosting-capacity code never diverge. Left as a separate,
-small follow-up so it can be reviewed on its own.
+The per-network *default* framework below reproduces the behaviour of
+the original module exactly (no silent change of published numbers);
+pass ``framework=`` explicitly to switch.
+
+Cross-layer consistency: ``transform/seeds/network_voltage_limits.csv``
+must hold the same default limits; ``tests/test_hc_cross_layer.py``
+fails if they drift apart.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
+
+
+class CriterionKind(str, Enum):
+    """Whether a voltage band is meant for instantaneous or statistical use."""
+
+    INSTANTANEOUS = "instantaneous"
+    STATISTICAL = "statistical"
 
 
 @dataclass(frozen=True)
 class NetworkLimits:
-    """Physical limits that define a hosting-capacity violation.
+    """Limits that define a violation for one study.
 
-    Hosting capacity is bounded by whichever limit is hit first --
-    voltage or thermal (line/transformer loading) -- not voltage
-    alone.
+    Attributes:
+        v_min_pu, v_max_pu: Voltage band applied to buses in scope.
+        max_line_loading_percent, max_trafo_loading_percent: Thermal limits.
+        framework: Name of the regulatory framework the band comes from.
+        kind: Instantaneous vs statistical (see module docstring).
+        voltage_levels_kv: If set, only buses at these nominal voltages
+            are voltage-checked (e.g. ``(0.4,)`` for cigre_lv, so the
+            20 kV MV buses -- not customer service points -- are not
+            judged by an LV criterion). ``None`` means every level.
     """
 
     v_min_pu: float
     v_max_pu: float
     max_line_loading_percent: float = 100.0
     max_trafo_loading_percent: float = 100.0
+    framework: str = "custom"
+    kind: CriterionKind = CriterionKind.INSTANTANEOUS
+    voltage_levels_kv: tuple[float, ...] | None = None
+
+    def __post_init__(self) -> None:
+        if not 0.0 < self.v_min_pu < 1.0 < self.v_max_pu:
+            raise ValueError(
+                f"Voltage band must satisfy 0 < v_min < 1 < v_max, got "
+                f"[{self.v_min_pu}, {self.v_max_pu}]."
+            )
+        if self.max_line_loading_percent <= 0 or self.max_trafo_loading_percent <= 0:
+            raise ValueError("Thermal limits must be positive.")
 
 
-# ANSI C84.1 Range A -- standard normal-operation tolerance, used for
-# the balanced transmission test cases. Matches the threshold already
-# hardcoded in fct_bus_voltage.sql for these networks.
-_ANSI_RANGE_A = NetworkLimits(v_min_pu=0.95, v_max_pu=1.05)
+@dataclass(frozen=True)
+class VoltageFramework:
+    """A named voltage band from a standard or regulation."""
 
-# CIGRE LV distribution feeder -- wider tolerance reflecting the
-# network's own designed voltage drop along radial LV laterals.
-_CIGRE_LV = NetworkLimits(v_min_pu=0.90, v_max_pu=1.10)
+    name: str
+    v_min_pu: float
+    v_max_pu: float
+    kind: CriterionKind
+    reference: str
 
-NETWORK_LIMITS: dict[str, NetworkLimits] = {
-    "case14": _ANSI_RANGE_A,
-    "case39": _ANSI_RANGE_A,
-    "case57": _ANSI_RANGE_A,
-    "case118": _ANSI_RANGE_A,
-    "cigre_lv": _CIGRE_LV,
+
+FRAMEWORKS: dict[str, VoltageFramework] = {
+    "ansi_c84_range_a": VoltageFramework(
+        "ansi_c84_range_a", 0.95, 1.05, CriterionKind.INSTANTANEOUS,
+        "ANSI C84.1, Range A (service voltage)",
+    ),
+    "prodist_m8_bt": VoltageFramework(
+        "prodist_m8_bt", 0.92, 1.05, CriterionKind.INSTANTANEOUS,
+        "ANEEL PRODIST Modulo 8, faixa adequada BT 220/127 V [VERIFY revision]",
+    ),
+    "en50160_envelope": VoltageFramework(
+        "en50160_envelope", 0.90, 1.10, CriterionKind.STATISTICAL,
+        "EN 50160, +-10% (95% of 10-min means per week)",
+    ),
+}
+
+NETWORK_DEFAULT_FRAMEWORK: dict[str, str] = {
+    "case14": "ansi_c84_range_a",
+    "case39": "ansi_c84_range_a",
+    "case57": "ansi_c84_range_a",
+    "case118": "ansi_c84_range_a",
+    "cigre_lv": "en50160_envelope",
+}
+
+NETWORK_VOLTAGE_LEVELS_KV: dict[str, tuple[float, ...] | None] = {
+    "cigre_lv": (0.4,),
 }
 
 
-def limits_for(network_name: str) -> NetworkLimits:
-    """Return the violation limits for a given network.
+def limits_for(network_name: str, framework: str | None = None) -> NetworkLimits:
+    """Return the limits for ``network_name`` under ``framework``.
+
+    Args:
+        network_name: A registered network key.
+        framework: A key of :data:`FRAMEWORKS`; ``None`` uses the
+            network's default from :data:`NETWORK_DEFAULT_FRAMEWORK`.
 
     Raises:
-        ValueError: if the network has no registered limits. This is
-            intentional -- silently falling back to ANSI Range A for
-            an unrecognized network would risk repeating exactly the
-            bug this module exists to avoid.
+        ValueError: unknown network or framework. Deliberately no
+            fallback -- judging a new network by the wrong band
+            silently is the bug this module exists to prevent.
     """
+    if network_name not in NETWORK_DEFAULT_FRAMEWORK:
+        raise ValueError(
+            f"No hosting-capacity limits registered for network '{network_name}'. "
+            f"Add it to NETWORK_DEFAULT_FRAMEWORK in hosting_capacity/limits.py "
+            f"(and to transform/seeds/network_voltage_limits.csv)."
+        )
+    key = framework or NETWORK_DEFAULT_FRAMEWORK[network_name]
     try:
-        return NETWORK_LIMITS[network_name]
+        fw = FRAMEWORKS[key]
     except KeyError as exc:
         raise ValueError(
-            f"No hosting-capacity voltage limits registered for network "
-            f"'{network_name}'. Add an entry to NETWORK_LIMITS in "
-            f"hosting_capacity/limits.py before using it in a hosting-"
-            f"capacity study."
+            f"Unknown voltage framework '{key}'. Known: {sorted(FRAMEWORKS)}."
         ) from exc
+    return NetworkLimits(
+        v_min_pu=fw.v_min_pu,
+        v_max_pu=fw.v_max_pu,
+        framework=fw.name,
+        kind=fw.kind,
+        voltage_levels_kv=NETWORK_VOLTAGE_LEVELS_KV.get(network_name),
+    )
+
+
+# Backwards-compatible view: network -> default limits.
+NETWORK_LIMITS: dict[str, NetworkLimits] = {
+    name: limits_for(name) for name in NETWORK_DEFAULT_FRAMEWORK
+}
