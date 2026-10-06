@@ -65,3 +65,21 @@ def test_time_series_validation_and_immutability() -> None:
     ts = TimeSeries(np.ones(2), np.array([0.0, 0.5]), 24)
     with pytest.raises(ValueError):
         ts.pv_mult[0] = 1.0
+
+
+def test_time_series_does_not_freeze_the_callers_arrays() -> None:
+    """R10 regression: np.asarray aliased float64 input and set it read-only."""
+    load = np.ones(4)
+    pv = np.array([0.0, 0.5, 0.5, 0.0])
+    ts = TimeSeries(load, pv, 4)
+    assert load.flags.writeable and pv.flags.writeable
+    load[0] = 2.0  # mutating the caller's copy must not leak into the series
+    assert ts.load_mult[0] == 1.0
+
+
+def test_time_series_equality_and_hash_are_identity_based() -> None:
+    """R10 regression: generated __eq__/__hash__ crashed on ndarray fields."""
+    a = TimeSeries(np.ones(3), np.full(3, 0.1), 3)
+    b = TimeSeries(np.ones(3), np.full(3, 0.1), 3)
+    assert a == a and a != b
+    assert len({a, b}) == 2

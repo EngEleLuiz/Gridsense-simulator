@@ -6,6 +6,11 @@ was judged on a *different* series, and monotonicity in lambda was not
 even well defined. A :class:`TimeSeries` is built **once** per study
 and shared by every candidate.
 
+Immutability is enforced on private copies (review finding R10): the
+arrays passed in by the caller are copied, never frozen in place, and
+equality/hashing are identity-based because element-wise ``==`` on
+numpy arrays has no single truth value.
+
 Known limitation (C9, fixed in S2/Phase 8, not here): the synthetic
 ``LoadProfile`` peaks at midday, coinciding with solar. With that
 shape QSTS cannot differ much from the snapshot method.
@@ -20,7 +25,7 @@ import numpy as np
 from ..profiles import LoadProfile, ProfileConfig, SolarProfile
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class TimeSeries:
     """Per-step multipliers on nominal load and on PV rating.
 
@@ -37,8 +42,8 @@ class TimeSeries:
     start_step: int = 0
 
     def __post_init__(self) -> None:
-        lm = np.asarray(self.load_mult, dtype=float)
-        pm = np.asarray(self.pv_mult, dtype=float)
+        lm = np.array(self.load_mult, dtype=float, copy=True)
+        pm = np.array(self.pv_mult, dtype=float, copy=True)
         if lm.ndim != 1 or lm.shape != pm.shape or lm.size == 0:
             raise ValueError("load_mult and pv_mult must be equal-length non-empty 1-D arrays.")
         if np.any(lm <= 0):
