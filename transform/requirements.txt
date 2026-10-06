@@ -1,1 +1,1 @@
-dbt-postgres>=1.8
+dbt-postgres>=1.11.0
