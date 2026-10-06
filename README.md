@@ -21,7 +21,7 @@ account, managed service, or paid license is required at any phase.
 | 4 — API & dashboards | ✅ | `api/` (FastAPI) and `grafana/` (3 provisioned dashboards). See [`api/README.md`](api/README.md), [`grafana/README.md`](grafana/README.md). |
 | 5 — Network migration | ✅ | `cigre_lv`, a 44-bus radial LV distribution feeder (CIGRE TF C6.04.02), alongside `case14/39/57/118`. |
 | 6 — Hosting-capacity methods | ✅ | Deterministic, stochastic and QSTS hosting capacity, compared in a dbt mart, served by the API and a dashboard. |
-| **6.1 — Methodology review & bugfixes** | ✅ **current** | Line-by-line review against the literature; 12 fixes that change published numbers. See [below](#phase-61--methodology-review-and-bugfixes) and [`docs/CHANGES_phase6-bugfix.md`](docs/CHANGES_phase6-bugfix.md). |
+| **6.1 — Methodology review & bugfixes** | ✅ **current** | Line-by-line review against the literature: 12 fixes that change published numbers, then a post-merge code review (R01–R22). See [below](#phase-61--methodology-review-and-bugfixes) and [`docs/CHANGES_phase6-bugfix.md`](docs/CHANGES_phase6-bugfix.md). |
 | 7 — Certified surrogate + open dataset | 🔄 in progress, not merged | Physics prior (LinDistFlow) + learned residual with conformal screening, as an accelerator inside the Phase 6 estimators. |
 | 8 — Real data | 🔲 planned | Real irradiance (SONDA/INMET) and residential load replacing the synthetic profiles. |
 | 9 — Streaming HC / operating envelope | 🔲 planned | Continuous envelope recomputation over the existing Kafka pipeline. |
@@ -55,19 +55,31 @@ by a regression test.
 | Deterministic | PRODIST M8 BT | ×0.25 | 1.164 | 0.799 MW | overvoltage, bus 16 |
 | Deterministic | PRODIST M8 BT | ×1.0 | — | — | `baseline_infeasible` (bus 35 at 0.912 pu with no PV) |
 | Stochastic p10 | PRODIST M8 BT | ×0.25 | ≈ 0.44 (95 % CI ≈ 0.28–0.53, n = 40) | ≈ 0.30 MW | depends on the adoption model |
+| QSTS, 60 days at 5 min | EN 50160 envelope | profile peak = 1.0 | 2.108 | 1.448 MW | trafo 0 (day 47, 11:40); zero-tolerance criterion |
 
 Two findings are already methodological results: the operating point
 and the regulatory criterion dominate the answer (≈ 2× between the old
 and corrected deterministic numbers), and uncoordinated adoption hosts
 far less than load-proportional allocation.
 
-**Still open** (tracked in [`docs/CODE_REVIEW_phase6-bugfix.md`](docs/CODE_REVIEW_phase6-bugfix.md)):
-QSTS has no duration criterion τ̄ (C7) or tap control (C8); the synthetic
-load peaks at midday together with solar (C9), so **no PRODIST QSTS
-number exists yet**; severity metrics VVSI/OSI/RPFI are not implemented
-(C13); isolated buses are not yet flagged as violations; the Silver
-voltage facts still judge slack/generator buses that the Python code
-excludes.
+**Post-merge code review** ([`docs/CODE_REVIEW_phase6-bugfix.md`](docs/CODE_REVIEW_phase6-bugfix.md)),
+all fixed with regression tests: unenergized buses are reported as
+violations (`isolated@bus_N`); a stochastic result is comparable only
+with a finite confidence interval; the Silver layer judges exactly the
+buses the hosting-capacity code judges (generated
+`network_voltage_scope` seed); the runner records unexpected errors and
+validates arguments up front; one set of search defaults for the three
+methods; and an exact `min_over_steps` QSTS strategy (4–5.6× fewer
+search power flows than the global bisection, same bracket).
+
+**Still open** (scientific work, not bugs): QSTS has no duration
+criterion τ̄ (C7) or tap control (C8); the synthetic load peaks at
+midday together with solar (C9), so **no PRODIST QSTS number exists
+yet**; severity metrics VVSI/OSI/RPFI are not implemented (C13). The
+raw synthetic profile reaches ~1.19× nominal load, which makes long QSTS
+runs baseline-infeasible on `cigre_lv` (R22): pass
+`--qsts-peak-load 1.0` (nominal load = peak demand) — an explicit,
+recorded modelling choice.
 
 ## Architecture
 
@@ -140,6 +152,7 @@ make produce         # simulator -> Kafka
 make consume-bronze  # Kafka -> Bronze Parquet
 make load-timescale  # Bronze -> TimescaleDB (idempotent)
 make dbt-build       # seeds + Silver/Gold + all dbt tests
+make seed-scope      # regenerate the voltage-scope seed after changing scope.py or adding a network
 make api-run         # http://localhost:8000/docs
 make help            # every target
 ```
@@ -163,7 +176,7 @@ Bronze Parquet (this is how CI tests the pipeline).
 
 ```bash
 make hc-study    # deterministic + stochastic, cigre_lv, PRODIST, critical point (minutes)
-make hc-qsts     # QSTS, 7-day horizon
+make hc-qsts     # QSTS, 7 days at 5 min, profile normalized to peak 1.0
 make hc-load     # Parquet -> bronze.hosting_capacity_results
 make dbt-build
 ```
@@ -182,14 +195,17 @@ python scripts/run_hosting_capacity_study.py --network cigre_lv \
 | `--load-scale` | Load multiplier at the critical operating point for deterministic/stochastic (default 0.25, an assumption until Phase 8). `1.0` reproduces the old nominal-load numbers. |
 | `--mc-n-scenarios`, `--mc-alpha` | Stochastic HC = F⁻¹(α) of λ\*. A finite 95 % CI for p10 needs **n ≥ 36**; use ≥ 60. |
 | `--mc-adoption-min/max`, `--mc-size-dispersion` | Adoption model (assumptions — run a sensitivity analysis before citing). |
-| `--qsts-total-steps`, `--qsts-steps-per-day` | QSTS horizon. The 60-day default costs ~140 k power flows (≈ 1.5 h without numba). |
+| `--qsts-total-steps`, `--qsts-steps-per-day` | QSTS horizon (default 60 days at 5 min). Cost ≈ one power flow per step for the baseline gate plus about one per daylight step for the search. |
+| `--qsts-peak-load` | Rescale the synthetic load so its peak equals this multiplier (e.g. `1.0`). Required for long `cigre_lv` runs (R22); recorded in the payload. |
 
 **Reading the results.** Compare only rows with `is_comparable = true`,
 the same `criterion_framework`, and (for snapshot methods) the same
-`load_scale`. A failed study is kept as a row with
-`status = baseline_infeasible | no_daylight | error` and a NULL capacity.
-Pre-review rows are kept as `legacy_invalid`. QSTS is zero-tolerance
-(`qsts_criterion = zero_tolerance`) until the τ̄ criterion lands.
+`load_scale`. `is_comparable` requires payload v2, `status = ok`, a
+bounded and resolved search, and — for stochastic rows — a finite
+two-sided confidence interval (`hc_lambda_ci_low/high`). A failed study
+is kept as a row with `status = baseline_infeasible | no_daylight | error`
+and a NULL capacity; pre-review rows are `legacy_invalid`. QSTS is
+zero-tolerance (`qsts_criterion = zero_tolerance`) until τ̄ lands.
 
 ## Verify
 
@@ -218,10 +234,10 @@ make dbt-build   # dbt tests (needs TimescaleDB running)
 
 | Suite | Where | What it covers |
 |---|---|---|
-| Simulator | `simulator/tests/test_hc_*.py`, `test_study_runner.py`, `test_engine.py` | Every C/N fix above, golden numbers, payload v2, cross-layer limits (Python ↔ dbt seed) |
-| Ingestion | `ingestion/tests/` | Bronze consumer (Kafka mocked) |
+| Simulator | `simulator/tests/test_hc_*.py`, `test_study_runner.py`, `test_provenance.py`, `test_engine.py` | Every C/N/R fix, golden numbers, payload v2, cross-layer limits **and voltage scope** (Python ↔ dbt seeds), QSTS strategy equivalence |
+| Ingestion | `ingestion/tests/` | Bronze consumer (Kafka mocked), HC loader (psycopg2 mocked) |
 | API | `api/tests/` | All endpoints (DB session mocked), `comparable_only` default |
-| dbt | `transform/tests/`, schema YAML | Voltage limits per network, HC bracket ordering, comparable rows complete, non-negative capacity |
+| dbt | `transform/tests/`, schema YAML | Voltage limits and scope per network, out-of-scope buses never violate, seed keys unique, HC bracket ordering, comparable rows complete (stochastic needs a CI), non-negative capacity |
 
 **Every commit on every branch** (and every PR) runs
 [`.github/workflows/tests.yml`](.github/workflows/tests.yml):
@@ -258,7 +274,8 @@ gridsense-simulator/
 ├── .env.example
 ├── Makefile                         # `make help` lists every target
 ├── docs/
-│   ├── CHANGES_phase6-bugfix.md     # Phase 6.1 changelog
+│   ├── CHANGES_phase6-bugfix.md     # Phase 6.1 changelog (C/N fixes)
+│   ├── CHANGES_phase6.1-review-fixes.md  # post-merge review fixes (R01–R22)
 │   └── CODE_REVIEW_phase6-bugfix.md # post-merge review, open issues
 ├── simulator/
 │   ├── gridsense_sim/
@@ -269,6 +286,8 @@ gridsense-simulator/
 │   │   ├── engine.py, cli.py, profiles.py, scenarios.py, ...
 │   └── tests/                       # test_hc_*.py: one file per module
 ├── scripts/
+│   ├── generate_voltage_scope_seed.py  # Python scope rule -> dbt seed
+│   ├── debug/                       # check_db.py, query_bronze.py (ad-hoc checks)
 │   ├── run_hosting_capacity_study.py
 │   └── ci/                          # jsonl_to_bronze.py, assert_e2e.py
 ├── ingestion/                       # Kafka -> Parquet -> TimescaleDB (+ HC loader)
