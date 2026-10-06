@@ -24,21 +24,24 @@ models:
 
   - name: mart_hosting_capacity
     description: >
-      Side-by-side comparison of the deterministic, stochastic, and
-      QSTS hosting-capacity methodologies for the same network -- the
-      core scientific comparison the dissertation is built around.
-      total_pv_mw_comparable is the one number meant for naive
-      cross-method comparison; see its column description for the
-      stochastic-calibration caveat before citing it directly.
+      Side-by-side comparison of the deterministic, stochastic and QSTS
+      hosting-capacity methods. Filter on is_comparable and compare only
+      rows with the same criterion_framework (and load_scale for snapshot
+      methods). Legacy v1 rows are retained but never comparable.
     columns:
       - name: network
         tests: [not_null]
       - name: method
         tests: [not_null]
+      - name: is_comparable
+        tests: [not_null]
       - name: total_pv_mw_comparable
         description: >
-          deterministic/qsts: total PV at the binding constraint.
-          stochastic: p50 of feasible trials -- NOT yet calibrated to
-          the same ceiling as the other two methods (see
-          stochastic.py's module docstring). Never negative -- see
-          assert_hosting_capacity_non_negative.sql.
+          deterministic/qsts: PV at the largest verified-feasible lambda.
+          stochastic: F^-1(hc_alpha) of the critical penetration
+          (conservative quantile). NULL unless is_comparable.
+      - name: criterion_framework
+        description: "Voltage framework (ansi_c84_range_a | prodist_m8_bt | en50160_envelope)."
+      - name: load_scale
+        description: "Load multiplier at the evaluated operating point; NULL for QSTS."
+

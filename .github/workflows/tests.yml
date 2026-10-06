@@ -1,0 +1,101 @@
+# CI for GridSense (review finding N5).
+#
+# Purpose: make the hosting-capacity regression tests (baseline gate,
+# no-daylight guard, golden numbers from doc 06, cross-layer limits)
+# run on every push, instead of only when someone remembers to.
+#
+# Jobs are isolated on purpose: dbt-postgres and pandapower pin
+# incompatible versions of `deepdiff`, so they never share an env.
+
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e "simulator[dev,fast]"
+      - run: python -m pytest simulator/tests -q
+
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r api/requirements.txt
+      - run: python -m pytest -q
+        working-directory: api
+
+  ingestion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r ingestion/requirements.txt
+      - run: python -m pytest tests -q
+        working-directory: ingestion
+
+  dbt:
+    # Builds and tests the hosting-capacity models against a real
+    # Postgres, fed by the real runner + loader (end-to-end contract).
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: gridsense
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TIMESCALE_HOST: localhost
+      TIMESCALE_PORT: "5432"
+      TIMESCALE_USER: postgres
+      TIMESCALE_PASSWORD: postgres
+      TIMESCALE_DB: gridsense
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Produce study results (small, fast configuration)
+        run: |
+          python -m venv /tmp/sim && . /tmp/sim/bin/activate
+          pip install -e "simulator[dev,fast]" -r ingestion/requirements.txt
+          python scripts/run_hosting_capacity_study.py --network cigre_lv \
+            --framework prodist_m8_bt --methods deterministic stochastic \
+            --mc-n-scenarios 8 --tolerance 0.05 --output-dir /tmp/hc
+          python ingestion/load_hosting_capacity_to_timescale.py \
+            --results-dir /tmp/hc \
+            --db-url postgresql://postgres:postgres@localhost:5432/gridsense
+      - name: dbt build (hosting-capacity models)
+        run: |
+          python -m venv /tmp/dbt && . /tmp/dbt/bin/activate
+          pip install -r transform/requirements.txt
+          dbt build --project-dir transform --profiles-dir transform \
+            --select stg_hosting_capacity_results mart_hosting_capacity

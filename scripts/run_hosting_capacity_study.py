@@ -1,16 +1,35 @@
-"""Runs one or more hosting-capacity methodologies against a network
-and writes the results as partitioned Parquet files, following the
-same schema-on-read Bronze pattern as ingestion/bronze_consumer.py:
-raw JSON payload + run metadata now, typed parsing deferred to a dbt
-staging model later.
+"""Run hosting-capacity methodologies and write Bronze-pattern Parquet.
 
-Each method runs on its OWN fresh network instance, so one method's
-sgens (e.g. deterministic's hosting_capacity_pv_* or stochastic's
-hosting_capacity_mc_pv_*) never leak into another method's power flow.
+Output layout (unchanged)::
 
-Run with:
-    python scripts/run_hosting_capacity_study.py --network cigre_lv \
-        --methods deterministic stochastic qsts -v
+    {output_dir}/network={network}/method={method}/part-{ts_ms}.parquet
+
+with columns ``network, method, run_id, run_timestamp, raw_value``
+(``raw_value`` = JSON, schema-on-read by
+``transform/models/staging/stg_hosting_capacity_results.sql``).
+
+Payload schema v2 (this review)
+-------------------------------
+Every ``raw_value`` now carries the same envelope:
+
+``schema_version`` (2), ``status`` (``"ok"`` or an error code such as
+``"baseline_infeasible"`` / ``"no_daylight"``), ``error``,
+``lambda_max``, ``lambda_fail``, ``bounded``, ``total_pv_mw``,
+``binding_constraint``, ``conditions`` (criterion + operating point),
+``params`` (every argument that shaped the number) and
+``provenance`` (git commit, dirty flag, library versions).
+
+A failed method is **recorded**, not crashed on: "PRODIST at nominal
+load is infeasible before any PV" is a result the dissertation needs.
+
+For ``stochastic``, ``lambda_max``/``total_pv_mw`` hold ``F^-1(alpha)``
+(``alpha`` recorded), i.e. the conservative stochastic HC; the legacy
+budget-bound estimator is no longer written by this script.
+
+Run with::
+
+    python scripts/run_hosting_capacity_study.py --network cigre_lv \\
+        --framework prodist_m8_bt --methods deterministic stochastic -v
 """
 
 from __future__ import annotations
@@ -18,23 +37,35 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Callable
 
+import pandapower as pp
 import pandapower.networks as pn
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 from gridsense_sim.hosting_capacity import (
+    DEFAULT_CRITICAL_LOAD_SCALE,
+    limits_for,
+    FRAMEWORKS,
+    AdoptionModel,
+    HostingCapacityError,
+    estimate_hosting_capacity_stochastic,
     find_hosting_capacity_deterministic,
     find_hosting_capacity_qsts,
-    run_monte_carlo,
 )
 from gridsense_sim.hosting_capacity.qsts import DEFAULT_STEPS_PER_DAY, DEFAULT_TOTAL_STEPS
+from gridsense_sim.provenance import collect_provenance
 
 logger = logging.getLogger("gridsense_sim.run_hosting_capacity_study")
+
+PAYLOAD_SCHEMA_VERSION = 2
+METHODS: tuple[str, ...] = ("deterministic", "stochastic", "qsts")
 
 HC_BRONZE_SCHEMA = pa.schema(
     [
@@ -46,7 +77,7 @@ HC_BRONZE_SCHEMA = pa.schema(
     ]
 )
 
-SUPPORTED_NETWORKS = {
+SUPPORTED_NETWORKS: dict[str, Callable[[], pp.pandapowerNet]] = {
     "case14": pn.case14,
     "case39": pn.case39,
     "case57": pn.case57,
@@ -55,22 +86,96 @@ SUPPORTED_NETWORKS = {
 }
 
 
-def _stochastic_summary(result, include_trials: bool = False) -> dict:
-    """Stochastic returns a distribution, not one number -- summarize
-    it to p50/p95 so the mart can compare it against the single-number
-    deterministic/QSTS results without the row size exploding (500
-    trials x N buses each is large). Full trials are opt-in.
-    """
-    summary = {
-        "network_name": result.network_name,
-        "n_trials": len(result.trials),
-        "violation_rate": result.violation_rate,
-        "hosting_capacity_mw_p50": result.hosting_capacity_mw(0.5),
-        "hosting_capacity_mw_p95": result.hosting_capacity_mw(0.95),
+def _finite(x: float | None) -> float | None:
+    """JSON-safe float: ``inf``/``nan`` -> ``None``."""
+    if x is None or not math.isfinite(x):
+        return None
+    return float(x)
+
+
+def _envelope(method: str, network: str, params: dict[str, Any], provenance: dict) -> dict:
+    return {
+        "schema_version": PAYLOAD_SCHEMA_VERSION,
+        "method": method,
+        "network_name": network,
+        "status": "ok",
+        "error": None,
+        "params": params,
+        "provenance": provenance,
     }
-    if include_trials:
-        summary["trials"] = [asdict(t) for t in result.trials]
-    return summary
+
+
+def _run_deterministic(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
+    r = find_hosting_capacity_deterministic(net, network, **kw)
+    return {
+        "lambda_max": r.lambda_max,
+        "lambda_fail": r.lambda_fail,
+        "bounded": r.bounded,
+        "total_pv_mw": r.total_pv_mw if r.bounded else None,
+        "binding_constraint": r.binding_constraint,
+        "conditions": asdict(r.conditions),
+        "iterations": r.iterations,
+        "reverse_power_flow_at_hc": r.reverse_power_flow_at_hc,
+        "pv_mw_per_bus": r.pv_mw_per_bus,
+    }
+
+
+def _run_stochastic(
+    net: pp.pandapowerNet, network: str, kw: dict, alpha: float, include_scenarios: bool
+) -> dict:
+    est = estimate_hosting_capacity_stochastic(net, network, **kw)
+    q = est.hc_lambda(alpha)
+    p50 = est.hc_lambda(0.5)
+    lam = _finite(q.point)
+    bindings: dict[str, int] = {}
+    for s in est.scenarios:
+        key = (s.binding_constraint or "unbounded").split(" (")[0]
+        bindings[key] = bindings.get(key, 0) + 1
+    out = {
+        "lambda_max": lam,
+        "lambda_fail": None,
+        "bounded": lam is not None,
+        "total_pv_mw": None if lam is None else round(lam * est.total_nominal_load_mw, 6),
+        "binding_constraint": None,
+        "conditions": asdict(est.conditions),
+        "alpha": alpha,
+        "hc_lambda_ci_low": _finite(q.low),
+        "hc_lambda_ci_high": _finite(q.high),
+        "ci_confidence": q.confidence,
+        "ci_achieved_coverage": q.achieved_coverage,
+        "hc_lambda_p50": _finite(p50.point),
+        "hc_mw_p50": None if _finite(p50.point) is None
+        else round(p50.point * est.total_nominal_load_mw, 6),
+        "total_nominal_load_mw": est.total_nominal_load_mw,
+        "n_scenarios": len(est.scenarios),
+        "n_censored": est.n_censored,
+        "power_flows": est.power_flows,
+        "binding_constraint_counts": bindings,
+        "adoption_model": asdict(est.adoption_model),
+    }
+    if include_scenarios:
+        out["scenarios"] = [
+            {**asdict(s), "lambda_critical": _finite(s.lambda_critical)} for s in est.scenarios
+        ]
+    return out
+
+
+def _run_qsts(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
+    r = find_hosting_capacity_qsts(net, network, **kw)
+    return {
+        "lambda_max": r.lambda_max,
+        "lambda_fail": r.lambda_fail,
+        "bounded": r.bounded,
+        "total_pv_mw": r.total_pv_mw if r.bounded else None,
+        "binding_constraint": r.binding_constraint,
+        "conditions": asdict(r.conditions),
+        "criterion": r.criterion,
+        "first_violating_step": r.first_violating_step,
+        "total_steps": r.total_steps,
+        "steps_per_day": r.steps_per_day,
+        "daylight_steps": r.daylight_steps,
+        "power_flows": r.power_flows,
+    }
 
 
 def build_records(
@@ -81,184 +186,174 @@ def build_records(
     deterministic_kwargs: dict,
     stochastic_kwargs: dict,
     qsts_kwargs: dict,
-    include_stochastic_trials: bool,
+    stochastic_alpha: float = 0.10,
+    include_stochastic_scenarios: bool = False,
+    network_factory: Callable[[], pp.pandapowerNet] | None = None,
 ) -> list[dict]:
-    """Runs the requested methods and returns Bronze-shaped rows ready
-    for write_records_to_parquet.
+    """Run the requested methods; one Bronze row per method.
+
+    Each method gets a fresh network instance (the estimators also never
+    mutate their input, so this is belt-and-braces). A
+    :class:`HostingCapacityError` is serialized as ``status``.
     """
+    factory = network_factory or SUPPORTED_NETWORKS[network_name]
+    provenance = collect_provenance().to_dict()
+    runners: dict[str, tuple[dict, Callable[[pp.pandapowerNet], dict]]] = {
+        "deterministic": (
+            deterministic_kwargs,
+            lambda n: _run_deterministic(n, network_name, deterministic_kwargs),
+        ),
+        "stochastic": (
+            {**stochastic_kwargs, "alpha": stochastic_alpha},
+            lambda n: _run_stochastic(
+                n, network_name, stochastic_kwargs, stochastic_alpha, include_stochastic_scenarios
+            ),
+        ),
+        "qsts": (qsts_kwargs, lambda n: _run_qsts(n, network_name, qsts_kwargs)),
+    }
+
     records: list[dict] = []
-
-    if "deterministic" in methods:
-        net = SUPPORTED_NETWORKS[network_name]()
-        result = find_hosting_capacity_deterministic(net, network_name, **deterministic_kwargs)
+    for method in methods:
+        params, run = runners[method]
+        payload = _envelope(method, network_name, _jsonable(params), provenance)
+        try:
+            payload.update(run(factory()))
+        except HostingCapacityError as exc:
+            payload.update(
+                status=exc.status,
+                error=str(exc),
+                bounded=False,
+                conditions=_failed_conditions(network_name, params, method),
+            )
+            logger.warning("%s: %s", method, exc)
+        else:
+            logger.info(
+                "%s: lambda_max=%s total_pv_mw=%s binding=%s",
+                method, payload.get("lambda_max"), payload.get("total_pv_mw"),
+                payload.get("binding_constraint"),
+            )
         records.append(
             {
                 "network": network_name,
-                "method": "deterministic",
+                "method": method,
                 "run_id": run_id,
                 "run_timestamp": run_timestamp,
-                "raw_value": json.dumps(asdict(result)),
+                "raw_value": json.dumps(payload, allow_nan=False, default=_json_default),
             }
         )
-        logger.info(
-            "deterministic: lambda_max=%.4f total_pv_mw=%.4f binding=%s",
-            result.lambda_max,
-            result.total_pv_mw,
-            result.binding_constraint,
-        )
-
-    if "stochastic" in methods:
-        net = SUPPORTED_NETWORKS[network_name]()
-        result = run_monte_carlo(net, network_name, **stochastic_kwargs)
-        summary = _stochastic_summary(result, include_trials=include_stochastic_trials)
-        records.append(
-            {
-                "network": network_name,
-                "method": "stochastic",
-                "run_id": run_id,
-                "run_timestamp": run_timestamp,
-                "raw_value": json.dumps(summary),
-            }
-        )
-        logger.info(
-            "stochastic: p50=%.4f p95=%.4f violation_rate=%.2f",
-            summary["hosting_capacity_mw_p50"],
-            summary["hosting_capacity_mw_p95"],
-            summary["violation_rate"],
-        )
-
-    if "qsts" in methods:
-        net = SUPPORTED_NETWORKS[network_name]()
-        result = find_hosting_capacity_qsts(net, network_name, **qsts_kwargs)
-        records.append(
-            {
-                "network": network_name,
-                "method": "qsts",
-                "run_id": run_id,
-                "run_timestamp": run_timestamp,
-                "raw_value": json.dumps(asdict(result)),
-            }
-        )
-        logger.info(
-            "qsts: lambda_max=%.4f total_pv_mw=%.4f total_steps=%d binding=%s",
-            result.lambda_max,
-            result.total_pv_mw,
-            result.total_steps,
-            result.binding_constraint,
-        )
-
     return records
 
 
-def write_records_to_parquet(records: list[dict], output_dir: str | Path) -> Path | None:
-    """Partition layout:
-    {output_dir}/network={network}/method={method}/part-{ts_ms}.parquet
+def _failed_conditions(network: str, params: dict, method: str) -> dict:
+    """Criterion and operating point of a failed run, so the failure is
+    still attributable (e.g. "PRODIST at nominal load: infeasible")."""
+    lim = limits_for(network, params.get("framework"))
+    return {
+        "network_name": network,
+        "framework": lim.framework,
+        "criterion_kind": lim.kind.value,
+        "v_min_pu": lim.v_min_pu,
+        "v_max_pu": lim.v_max_pu,
+        "load_scale": None if method == "qsts" else params.get("load_scale"),
+    }
 
-    Returns the path of the last file written, or None if `records`
-    was empty.
-    """
+
+def _json_default(obj: Any) -> Any:
+    if hasattr(obj, "value"):  # Enum
+        return obj.value
+    if hasattr(obj, "item"):  # numpy scalar
+        return obj.item()
+    raise TypeError(f"Not JSON serializable: {type(obj)!r}")
+
+
+def _jsonable(params: dict) -> dict:
+    out: dict[str, Any] = {}
+    for k, v in params.items():
+        if isinstance(v, AdoptionModel):
+            out[k] = asdict(v)
+        elif hasattr(v, "__dataclass_fields__"):
+            out[k] = asdict(v)
+        else:
+            out[k] = v
+    return out
+
+
+def write_records_to_parquet(records: list[dict], output_dir: str | Path) -> Path | None:
+    """Write records partitioned by network/method; return the last file path."""
     if not records:
         return None
-
     output_dir = Path(output_dir)
     by_partition: dict[tuple[str, str], list[dict]] = {}
     for record in records:
         by_partition.setdefault((record["network"], record["method"]), []).append(record)
-
-    last_path = None
+    last_path: Path | None = None
     for (network, method), rows in by_partition.items():
         partition_dir = output_dir / f"network={network}" / f"method={method}"
         partition_dir.mkdir(parents=True, exist_ok=True)
-        file_path = partition_dir / f"part-{int(datetime.now(timezone.utc).timestamp() * 1000)}.parquet"
-        table = pa.Table.from_pylist(rows, schema=HC_BRONZE_SCHEMA)
-        pq.write_table(table, file_path)
+        ts_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        file_path = partition_dir / f"part-{ts_ms}-{uuid.uuid4().hex[:8]}.parquet"
+        pq.write_table(pa.Table.from_pylist(rows, schema=HC_BRONZE_SCHEMA), file_path)
         last_path = file_path
         logger.info("Wrote %d record(s) to %s", len(rows), file_path)
-
     return last_path
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Run hosting-capacity methodologies and write results as Bronze-pattern Parquet."
-    )
-    parser.add_argument("--network", required=True, choices=sorted(SUPPORTED_NETWORKS))
-    parser.add_argument(
-        "--methods",
-        nargs="+",
-        default=["deterministic", "stochastic", "qsts"],
-        choices=["deterministic", "stochastic", "qsts"],
-    )
-    parser.add_argument("--output-dir", default="data/hosting_capacity")
-    parser.add_argument(
-        "--tolerance",
-        type=float,
-        default=0.01,
-        help="Bisection tolerance for deterministic/qsts, in lambda_ units.",
-    )
-    parser.add_argument("--mc-n-trials", type=int, default=500)
-    parser.add_argument(
-    "--mc-max-pv-mw-per-bus",
-    type=float,
-    default=0.02,
-    help=(
-        "Upper bound of the per-bus uniform PV sampling range. WARNING: "
-        "the default is not calibrated against any given network's real "
-        "hosting-capacity ceiling -- a first cigre_lv run (Sept/2026) "
-        "showed 0/500 trials violating anything at this default, meaning "
-        "it sampled well below where the network actually breaks. Pass "
-        "a value informed by a prior --methods deterministic run on the "
-        "same network (see that run's total_pv_mw / number of load "
-        "buses) if you want a stochastic result comparable to the "
-        "other methods. See stochastic.py's module docstring."
-    ),
-)
-    parser.add_argument(
-        "--mc-include-trials",
-        action="store_true",
-        help="Store every Monte Carlo trial in raw_value, not just the p50/p95 "
-        "summary (makes the row much larger; off by default).",
-    )
-    parser.add_argument(
-        "--qsts-total-steps",
-        type=int,
-        default=DEFAULT_TOTAL_STEPS,
-        help=(
-            f"Default is {DEFAULT_TOTAL_STEPS} (60 days @ {DEFAULT_STEPS_PER_DAY} "
-            f"steps/day). Pass 288*365 for the full annual horizon used in the "
-            f"dissertation's final Chapter 5 numbers -- see qsts.py's module "
-            f"docstring for the cost of doing that before running it."
-        ),
-    )
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("-v", "--verbose", action="store_true")
-    args = parser.parse_args()
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    p.add_argument("--network", required=True, choices=sorted(SUPPORTED_NETWORKS))
+    p.add_argument("--methods", nargs="+", default=list(METHODS), choices=METHODS)
+    p.add_argument("--framework", default=None, choices=sorted(FRAMEWORKS),
+                   help="Voltage framework; default = network default (see limits.py).")
+    p.add_argument("--load-scale", type=float, default=DEFAULT_CRITICAL_LOAD_SCALE,
+                   help="Load multiplier at the critical operating point "
+                        "(deterministic/stochastic). 1.0 reproduces the old nominal-load number.")
+    p.add_argument("--output-dir", default="data/hosting_capacity")
+    p.add_argument("--tolerance", type=float, default=0.01)
+    p.add_argument("--mc-n-scenarios", type=int, default=60)
+    p.add_argument("--mc-alpha", type=float, default=0.10,
+                   help="Risk level: stochastic HC = F^-1(alpha) of the critical penetration.")
+    p.add_argument("--mc-adoption-min", type=float, default=0.3)
+    p.add_argument("--mc-adoption-max", type=float, default=1.0)
+    p.add_argument("--mc-size-dispersion", type=float, default=0.5)
+    p.add_argument("--mc-include-scenarios", action="store_true")
+    p.add_argument("--qsts-total-steps", type=int, default=DEFAULT_TOTAL_STEPS)
+    p.add_argument("--qsts-steps-per-day", type=int, default=DEFAULT_STEPS_PER_DAY)
+    p.add_argument("--seed", type=int, default=42)
+    p.add_argument("-v", "--verbose", action="store_true")
+    return p.parse_args(argv)
 
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-
-    run_id = str(uuid.uuid4())
-    run_timestamp = datetime.now(timezone.utc).isoformat()
-
+    common = {"framework": args.framework, "tolerance": args.tolerance}
     records = build_records(
         network_name=args.network,
         methods=args.methods,
-        run_id=run_id,
-        run_timestamp=run_timestamp,
-        deterministic_kwargs={"tolerance": args.tolerance},
+        run_id=str(uuid.uuid4()),
+        run_timestamp=datetime.now(timezone.utc).isoformat(),
+        deterministic_kwargs={**common, "load_scale": args.load_scale},
         stochastic_kwargs={
-            "n_trials": args.mc_n_trials,
-            "max_pv_mw_per_bus": args.mc_max_pv_mw_per_bus,
+            **common,
+            "load_scale": args.load_scale,
+            "n_scenarios": args.mc_n_scenarios,
             "seed": args.seed,
+            "adoption_model": AdoptionModel(
+                adoption_fraction=(args.mc_adoption_min, args.mc_adoption_max),
+                size_dispersion=args.mc_size_dispersion,
+            ),
         },
         qsts_kwargs={
+            **common,
             "total_steps": args.qsts_total_steps,
-            "tolerance": args.tolerance,
+            "steps_per_day": args.qsts_steps_per_day,
             "profile_seed": args.seed,
         },
-        include_stochastic_trials=args.mc_include_trials,
+        stochastic_alpha=args.mc_alpha,
+        include_stochastic_scenarios=args.mc_include_scenarios,
     )
     write_records_to_parquet(records, args.output_dir)
 

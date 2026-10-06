@@ -1,77 +1,91 @@
 {{ config(materialized='view') }}
 
--- Thin typing layer over bronze.hosting_capacity_results. Each row
--- is one hosting-capacity study run for one method; because the
--- three methodologies produce different result shapes (see
--- simulator/gridsense_sim/hosting_capacity/{deterministic,
--- stochastic,qsts}.py), only fields that make sense for a given
--- method are populated below -- everything else is NULL, not
--- defaulted to 0 or "N/A", so downstream aggregation never silently
--- treats "not applicable to this method" as "measured zero".
+-- Typed view over bronze.hosting_capacity_results.
 --
--- total_pv_mw_comparable is the one field every method fills, so the
--- gold mart can put all three side by side without needing to know
--- method-specific field names: deterministic/qsts report it
--- directly (total_pv_mw, the PV at their binding constraint);
--- stochastic reports its p50 in that slot instead. Treat that
--- stochastic value with care -- see hosting_capacity/stochastic.py's
--- module docstring: at the default Monte Carlo sampling range, it's
--- a lower bound under an arbitrary PV-size budget, not yet a ceiling
--- comparable to the other two methods. Recalibration is deferred to
--- Phase 8 (real PV-sizing data), not fixed here.
+-- Payload versions
+--   v1 (pre-review, no 'schema_version' key): deterministic/QSTS at
+--      nominal load with no baseline check, stochastic = budget-bound
+--      Monte Carlo (review findings C1, C3, C4). Kept for history, but
+--      NEVER comparable.
+--   v2 (this review): shared envelope with status, conditions
+--      (framework, load_scale), params and provenance; stochastic =
+--      F^-1(alpha) of the critical penetration.
+--
+-- is_comparable is the single gate every consumer must use:
+--   schema_version >= 2 AND status = 'ok' AND bounded.
+-- total_pv_mw_comparable is NULL whenever is_comparable is false, so
+-- no dashboard can plot an invalid number by accident. The raw value
+-- is still available as total_pv_mw_reported.
+--
+-- Comparability across rows additionally requires equal
+-- criterion_framework (and, for snapshot methods, equal load_scale);
+-- the mart exposes both so consumers can filter on them.
 
 with source as (
 
-    select * from {{ source('bronze', 'hosting_capacity_results') }}
+    select
+        *,
+        coalesce((raw_value ->> 'schema_version')::integer, 1) as schema_version
+    from {{ source('bronze', 'hosting_capacity_results') }}
+
+),
+
+typed as (
+
+    select
+        network,
+        method,
+        run_id,
+        run_timestamp,
+        schema_version,
+
+        case when schema_version >= 2 then raw_value ->> 'status' else 'legacy_invalid' end
+            as status,
+        raw_value ->> 'error' as error,
+
+        coalesce((raw_value ->> 'bounded')::boolean, false) as is_bounded,
+
+        case
+            when schema_version >= 2 then (raw_value ->> 'total_pv_mw')::double precision
+            when method in ('deterministic', 'qsts') then (raw_value ->> 'total_pv_mw')::double precision
+            when method = 'stochastic' then (raw_value ->> 'hosting_capacity_mw_p50')::double precision
+        end as total_pv_mw_reported,
+
+        (raw_value ->> 'lambda_max')::double precision as lambda_max,
+        (raw_value ->> 'lambda_fail')::double precision as lambda_fail,
+        raw_value ->> 'binding_constraint' as binding_constraint,
+
+        raw_value -> 'conditions' ->> 'framework' as criterion_framework,
+        raw_value -> 'conditions' ->> 'criterion_kind' as criterion_kind,
+        (raw_value -> 'conditions' ->> 'v_min_pu')::double precision as v_min_pu,
+        (raw_value -> 'conditions' ->> 'v_max_pu')::double precision as v_max_pu,
+        (raw_value -> 'conditions' ->> 'load_scale')::double precision as load_scale,
+
+        -- stochastic (v2)
+        (raw_value ->> 'alpha')::double precision as hc_alpha,
+        (raw_value ->> 'hc_lambda_ci_low')::double precision as hc_lambda_ci_low,
+        (raw_value ->> 'hc_lambda_ci_high')::double precision as hc_lambda_ci_high,
+        (raw_value ->> 'hc_mw_p50')::double precision as total_pv_mw_p50,
+        (raw_value ->> 'n_scenarios')::integer as n_scenarios,
+        (raw_value ->> 'n_censored')::integer as n_censored,
+
+        -- qsts
+        raw_value ->> 'criterion' as qsts_criterion,
+        (raw_value ->> 'total_steps')::integer as qsts_total_steps,
+        (raw_value ->> 'steps_per_day')::integer as qsts_steps_per_day,
+        (raw_value ->> 'first_violating_step')::integer as qsts_first_violating_step,
+
+        raw_value -> 'provenance' ->> 'git_commit' as git_commit,
+        (raw_value -> 'provenance' ->> 'git_dirty')::boolean as git_dirty
+
+    from source
 
 )
 
 select
-    network,
-    method,
-    run_id,
-    run_timestamp,
-
+    *,
+    (schema_version >= 2 and status = 'ok' and is_bounded) as is_comparable,
     case
-        when method in ('deterministic', 'qsts')
-            then (raw_value ->> 'total_pv_mw')::double precision
-        when method = 'stochastic'
-            then (raw_value ->> 'hosting_capacity_mw_p50')::double precision
-    end as total_pv_mw_comparable,
-
-    case
-        when method = 'stochastic'
-            then (raw_value ->> 'hosting_capacity_mw_p95')::double precision
-    end as total_pv_mw_p95,
-
-    case
-        when method in ('deterministic', 'qsts')
-            then (raw_value ->> 'lambda_max')::double precision
-    end as lambda_max,
-
-    case
-        when method in ('deterministic', 'qsts')
-            then raw_value ->> 'binding_constraint'
-    end as binding_constraint,
-
-    case
-        when method = 'stochastic'
-            then (raw_value ->> 'violation_rate')::double precision
-    end as violation_rate,
-
-    case
-        when method = 'stochastic'
-            then (raw_value ->> 'n_trials')::integer
-    end as n_trials,
-
-    case
-        when method = 'qsts'
-            then (raw_value ->> 'total_steps')::integer
-    end as qsts_total_steps,
-
-    case
-        when method = 'qsts'
-            then (raw_value ->> 'steps_per_day')::integer
-    end as qsts_steps_per_day
-
-from source
+        when schema_version >= 2 and status = 'ok' and is_bounded then total_pv_mw_reported
+    end as total_pv_mw_comparable
+from typed
