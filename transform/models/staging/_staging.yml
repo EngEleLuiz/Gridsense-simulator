@@ -35,13 +35,15 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['deterministic', 'stochastic', 'qsts']
+              arguments:
+                values: ['deterministic', 'stochastic', 'qsts']
       - name: run_id
         tests: [not_null]
       - name: status
         tests:
           - not_null
           - accepted_values:
-              values: ['ok', 'baseline_infeasible', 'no_daylight', 'error', 'legacy_invalid']
+              arguments:
+                values: ['ok', 'baseline_infeasible', 'no_daylight', 'error', 'legacy_invalid']
       - name: is_comparable
         tests: [not_null]

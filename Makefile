@@ -27,7 +27,7 @@ up: ## Start Kafka + TimescaleDB + Grafana
 	@echo "Kafka:        localhost:9092"
 	@echo "Kafka UI:     http://localhost:8080"
 	@echo "TimescaleDB:  localhost:5432 (db=gridsense, user=postgres, password=postgres)"
-	@echo "Grafana:      http://localhost:3001 (user=admin, password=admin)"
+	@echo "Grafana:      http://localhost:$${GRAFANA_PORT:-3001} (user=admin, password=admin)"
 
 down: ## Stop containers (keeps volumes)
 	docker compose down

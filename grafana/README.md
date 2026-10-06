@@ -11,7 +11,7 @@ docker compose up -d grafana
 ```
 
 (or just `docker compose up -d`, which starts everything). Then open
-**http://localhost:3000** — user `admin`, password `admin` (change it
+**http://localhost:3001** — user `admin`, password `admin` (change it
 if you expose this beyond localhost).
 
 ## GridSense Overview dashboard
