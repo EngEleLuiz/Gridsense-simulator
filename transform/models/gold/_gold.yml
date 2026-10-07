@@ -39,7 +39,8 @@ models:
         description: >
           deterministic/qsts: PV at the largest verified-feasible lambda.
           stochastic: F^-1(hc_alpha) of the critical penetration
-          (conservative quantile). NULL unless is_comparable.
+          (conservative quantile). NULL unless is_comparable; stochastic
+          rows additionally need a finite two-sided CI (n large enough).
       - name: criterion_framework
         description: "Voltage framework (ansi_c84_range_a | prodist_m8_bt | en50160_envelope)."
       - name: load_scale

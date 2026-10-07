@@ -38,3 +38,39 @@ def test_cigre_base_case_feasible_under_default_limits(cigre) -> None:
     import copy
 
     assert check_violations(copy.deepcopy(cigre), limits_for("cigre_lv")).has_violation is False
+
+
+def _cigre_with_last_line_open(cigre):
+    import copy
+
+    net = copy.deepcopy(cigre)
+    net.line.at[int(net.line.index[-1]), "in_service"] = False
+    return net
+
+
+def test_isolated_bus_is_a_violation_not_a_pass(cigre) -> None:
+    """R04 regression: an unenergized bus (vm = NaN) used to pass as 'no violation'.
+
+    Opening the last CIGRE LV line disconnects bus 43, which feeds
+    'Load C20'. NaN compares false against both limits, so the old code
+    reported the network as feasible with that load unserved.
+    """
+    report = check_violations(_cigre_with_last_line_open(cigre), limits_for("cigre_lv"))
+    assert report.has_violation is True
+    assert report.isolated_buses == [43]
+    assert 43 not in report.voltage_violations
+    assert report.binding_constraint().startswith("isolated@bus_43")
+
+
+def test_isolated_bus_outranks_any_finite_exceedance() -> None:
+    r = ViolationReport(
+        converged=True, has_violation=True,
+        voltage_violations={7: 1.30}, trafo_violations={0: 250.0},
+        isolated_buses=[12], _limits=LIM,
+    )
+    assert r.ranked_violations()[0][1].startswith("isolated@bus_12")
+
+
+def test_out_of_service_line_nan_loading_is_not_a_thermal_violation(cigre) -> None:
+    report = check_violations(_cigre_with_last_line_open(cigre), limits_for("cigre_lv"))
+    assert report.line_violations == {}

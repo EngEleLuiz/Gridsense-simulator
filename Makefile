@@ -14,7 +14,7 @@ DBT := $(DBT_ENV) dbt --no-use-colors
 DBT_ARGS := --project-dir transform --profiles-dir transform
 
 .PHONY: help up down logs status produce consume-bronze query-bronze \
-        load-timescale dbt-seed dbt-run dbt-test dbt-build dbt-docs \
+        load-timescale seed-scope dbt-seed dbt-run dbt-test dbt-build dbt-docs \
         hc-study hc-qsts hc-load api-run \
         test test-simulator test-hc test-ingestion test-api lint
 
@@ -27,7 +27,7 @@ up: ## Start Kafka + TimescaleDB + Grafana
 	@echo "Kafka:        localhost:9092"
 	@echo "Kafka UI:     http://localhost:8080"
 	@echo "TimescaleDB:  localhost:5432 (db=gridsense, user=postgres, password=postgres)"
-	@echo "Grafana:      http://localhost:3001 (user=admin, password=admin)"
+	@echo "Grafana:      http://localhost:$${GRAFANA_PORT:-3001} (user=admin, password=admin)"
 
 down: ## Stop containers (keeps volumes)
 	docker compose down
@@ -58,6 +58,9 @@ load-timescale: ## Bronze Parquet -> bronze.raw_events (idempotent)
 		--bronze-dir data/bronze --db-url $(DB_URL) -v
 
 # ------------------------------------------------------------------ dbt
+seed-scope: ## Regenerate transform/seeds/network_voltage_scope.csv from hosting_capacity/scope.py
+	$(PYTHON) scripts/generate_voltage_scope_seed.py
+
 dbt-seed: ## Load seeds (network_voltage_limits.csv)
 	$(DBT) seed $(DBT_ARGS)
 
@@ -80,9 +83,10 @@ hc-study: ## Deterministic + stochastic HC on cigre_lv under PRODIST (minutes)
 		--framework prodist_m8_bt --methods deterministic stochastic \
 		--output-dir $(HC_DIR) -v
 
-hc-qsts: ## QSTS on a 7-day horizon (~10 min with numba; 60 days takes > 1 h)
+hc-qsts: ## QSTS, 7 days at 5 min, load profile normalized to peak 1.0 (see R22)
 	$(PYTHON) scripts/run_hosting_capacity_study.py --network cigre_lv \
-		--methods qsts --qsts-total-steps 2016 --output-dir $(HC_DIR) -v
+		--methods qsts --qsts-total-steps 2016 --qsts-peak-load 1.0 \
+		--output-dir $(HC_DIR) -v
 
 hc-load: ## HC Parquet -> bronze.hosting_capacity_results (idempotent)
 	$(PYTHON) ingestion/load_hosting_capacity_to_timescale.py \

@@ -50,7 +50,7 @@ from .conditions import DEFAULT_CRITICAL_LOAD_SCALE, StudyConditions, apply_load
 from .limits import limits_for
 from .quantiles import QuantileEstimate, quantile_with_ci
 from .scope import voltage_scope_buses
-from .search import bisect_max_feasible
+from .search import SEARCH_DEFAULTS, bisect_max_feasible
 from .violations import check_violations
 
 
@@ -102,6 +102,7 @@ class ScenarioResult:
     n_adopters: int
     lambda_critical: float  # largest feasible; inf if unbounded (censored)
     bounded: bool
+    resolved: bool
     binding_constraint: str | None
     power_flows: int
 
@@ -130,6 +131,11 @@ class StochasticHCEstimate:
     def power_flows(self) -> int:
         return sum(s.power_flows for s in self.scenarios)
 
+    @property
+    def all_resolved(self) -> bool:
+        """Every bounded scenario closed its bracket within ``tolerance``."""
+        return all(s.resolved for s in self.scenarios if s.bounded)
+
     def violation_probability(self, lambda_: float) -> float:
         """Empirical ``F(lambda)``: share of scenarios infeasible at ``lambda_``."""
         return sum(1 for x in self.lambdas if x < lambda_) / len(self.scenarios)
@@ -156,8 +162,9 @@ def estimate_hosting_capacity(
     adoption_model: AdoptionModel | None = None,
     framework: str | None = None,
     load_scale: float = DEFAULT_CRITICAL_LOAD_SCALE,
-    tolerance: float = 0.01,
-    max_expansions: int = 12,
+    tolerance: float = SEARCH_DEFAULTS.tolerance,
+    max_expansions: int = SEARCH_DEFAULTS.max_expansions,
+    max_bisections: int = SEARCH_DEFAULTS.max_bisections,
     seed: int | None = 42,
 ) -> StochasticHCEstimate:
     """Monte Carlo over adoption scenarios; one bisection per scenario.
@@ -168,7 +175,8 @@ def estimate_hosting_capacity(
         n_scenarios: Number of random adoption scenarios.
         adoption_model: See :class:`AdoptionModel`.
         framework, load_scale, tolerance: As in the deterministic method.
-        max_expansions: Doubling cap per scenario (2**12 = 4096x load).
+        max_expansions, max_bisections: Search controls per scenario
+            (shared defaults, see ``search.SEARCH_DEFAULTS``).
         seed: RNG seed (numpy ``default_rng``).
 
     Raises:
@@ -199,7 +207,12 @@ def estimate_hosting_capacity(
             apply_allocation(_w, _s, lam)
             return check_violations(_w, limits, scope).has_violation
 
-        out = bisect_max_feasible(_violates, tolerance=tolerance, max_expansions=max_expansions)
+        out = bisect_max_feasible(
+            _violates,
+            tolerance=tolerance,
+            max_expansions=max_expansions,
+            max_bisections=max_bisections,
+        )
         binding = None
         pfs = out.evaluations
         if out.bounded and out.lambda_fail is not None:
@@ -213,6 +226,7 @@ def estimate_hosting_capacity(
                 n_adopters=len(shape.base_mw_per_bus),
                 lambda_critical=out.lambda_max if out.bounded else math.inf,
                 bounded=out.bounded,
+                resolved=out.resolved,
                 binding_constraint=binding,
                 power_flows=pfs,
             )

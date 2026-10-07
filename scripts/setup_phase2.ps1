@@ -201,7 +201,7 @@ Write-Host "Terminal 3 — View Kafka UI:" -ForegroundColor Yellow
 Write-Host "  Browser: http://localhost:8080" -ForegroundColor White
 Write-Host ""
 Write-Host "Terminal 4 — Query the data:" -ForegroundColor Yellow
-Write-Host '  python ingestion_query.py' -ForegroundColor White
+Write-Host '  python scripts/debug/query_bronze.py' -ForegroundColor White
 Write-Host ""
 Write-Host "Or use the Makefile shortcuts:" -ForegroundColor Yellow
 Write-Host "  make produce          (run simulator)" -ForegroundColor White

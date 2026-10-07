@@ -27,8 +27,8 @@
   "panels": [
     {
       "id": 1,
-      "title": "Hosting Capacity by Method (latest run)",
-      "description": "Latest comparable run (payload v2, status ok, bounded) per method and voltage framework. Compare rows only within the same framework and load_scale. Stochastic = F^-1(alpha) of the critical penetration, with a distribution-free CI.",
+      "title": "Hosting Capacity by Method (latest run per criterion and operating point)",
+      "description": "Latest comparable run (payload v2, status ok, bounded) per method and voltage framework. Compare rows only within the same framework and load_scale. Stochastic = F^-1(alpha) of the critical penetration, with a distribution-free CI; shown only when that CI exists. One row per (method, framework, load_scale, alpha): different operating points are never collapsed together.",
       "type": "table",
       "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
       "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
@@ -44,7 +44,7 @@
           "refId": "A",
           "format": "table",
           "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
-          "rawSql": "SELECT DISTINCT ON (method, criterion_framework) method, criterion_framework, load_scale, run_timestamp, total_pv_mw_comparable, total_pv_mw_p50, lambda_max, hc_alpha, hc_lambda_ci_low, hc_lambda_ci_high, binding_constraint, n_scenarios, git_commit FROM public_gold.mart_hosting_capacity WHERE network = '$network' AND is_comparable ORDER BY method, criterion_framework, run_timestamp DESC",
+          "rawSql": "SELECT DISTINCT ON (method, criterion_framework, load_scale, hc_alpha) method, criterion_framework, load_scale, run_timestamp, total_pv_mw_comparable, total_pv_mw_p50, lambda_max, hc_alpha, hc_lambda_ci_low, hc_lambda_ci_high, binding_constraint, n_scenarios, git_commit FROM public_gold.mart_hosting_capacity WHERE network = '$network' AND is_comparable ORDER BY method, criterion_framework, load_scale, hc_alpha, run_timestamp DESC",
           "editorMode": "code",
           "rawQuery": true
         }
@@ -74,7 +74,7 @@
           "refId": "A",
           "format": "table",
           "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
-          "rawSql": "SELECT DISTINCT ON (method, criterion_framework) method || ' / ' || criterion_framework AS metric, total_pv_mw_comparable AS value FROM public_gold.mart_hosting_capacity WHERE network = '$network' AND is_comparable ORDER BY method, criterion_framework, run_timestamp DESC",
+          "rawSql": "SELECT DISTINCT ON (method, criterion_framework, load_scale, hc_alpha) method || ' / ' || criterion_framework || coalesce(' / load x' || load_scale::text, ' / time series') || coalesce(' / p' || round((hc_alpha * 100)::numeric)::text, '') AS metric, total_pv_mw_comparable AS value FROM public_gold.mart_hosting_capacity WHERE network = '$network' AND is_comparable ORDER BY method, criterion_framework, load_scale, hc_alpha, run_timestamp DESC",
           "editorMode": "code",
           "rawQuery": true
         }
@@ -99,7 +99,7 @@
           "refId": "A",
           "format": "table",
           "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
-          "rawSql": "SELECT DISTINCT ON (method, criterion_framework) method, criterion_framework, lambda_max, lambda_fail, binding_constraint FROM public_gold.mart_hosting_capacity WHERE network = '$network' AND is_comparable AND method IN ('deterministic', 'qsts') ORDER BY method, criterion_framework, run_timestamp DESC",
+          "rawSql": "SELECT DISTINCT ON (method, criterion_framework, load_scale, hc_alpha) method, criterion_framework, load_scale, lambda_max, lambda_fail, binding_constraint FROM public_gold.mart_hosting_capacity WHERE network = '$network' AND is_comparable AND method IN ('deterministic', 'qsts') ORDER BY method, criterion_framework, load_scale, hc_alpha, run_timestamp DESC",
           "editorMode": "code",
           "rawQuery": true
         }

@@ -24,10 +24,21 @@ comparable across types:
 * overvoltage:  ``(vm - v_max) / v_max``
 * undervoltage: ``(v_min - vm) / v_min``
 * overload:     ``(loading - limit) / limit``
+
+Isolated buses (review finding R04)
+-----------------------------------
+A bus in scope whose voltage comes back ``NaN`` is not energized (an
+open line or switch disconnected it). Comparisons with ``NaN`` are
+always false, so such a bus used to pass as "no violation" -- its load
+silently unserved. It is now reported in ``isolated_buses``, counts as a
+violation, and outranks every other violation (``exceedance = inf``).
+Thermal results that are ``NaN`` (out-of-service branches) carry no
+loading and are ignored.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Iterable
 
@@ -50,6 +61,8 @@ class ViolationReport:
         trafo_violations: trafo -> loading_percent.
         reverse_power_flow: trafo -> p_hv_mw for trafos exporting to the
             upstream grid (p_hv_mw < 0). Informational, not a violation.
+        isolated_buses: Buses in scope with no voltage solution (NaN),
+            i.e. not energized. Always a violation.
     """
 
     converged: bool
@@ -58,6 +71,7 @@ class ViolationReport:
     line_violations: dict[int, float] = field(default_factory=dict)
     trafo_violations: dict[int, float] = field(default_factory=dict)
     reverse_power_flow: dict[int, float] = field(default_factory=dict)
+    isolated_buses: list[int] = field(default_factory=list)
     _limits: NetworkLimits | None = field(default=None, repr=False, compare=False)
 
     def ranked_violations(self) -> list[tuple[float, str]]:
@@ -65,7 +79,9 @@ class ViolationReport:
         if self._limits is None:
             raise RuntimeError("ViolationReport was built without limits; cannot rank.")
         lim = self._limits
-        out: list[tuple[float, str]] = []
+        out: list[tuple[float, str]] = [
+            (math.inf, f"isolated@bus_{bus} (not energized)") for bus in self.isolated_buses
+        ]
         for bus, vm in self.voltage_violations.items():
             if vm > lim.v_max_pu:
                 exc, kind = (vm - lim.v_max_pu) / lim.v_max_pu, "overvoltage"
@@ -119,15 +135,16 @@ def assess_violations(
     """
     scope = tuple(voltage_buses) if voltage_buses is not None else voltage_scope_buses(net, limits)
     vm = net.res_bus["vm_pu"].reindex(list(scope))
+    isolated = sorted(int(bus) for bus, v in vm.items() if not math.isfinite(float(v)))
     voltage_violations = {
         int(bus): float(v)
         for bus, v in vm.items()
-        if v < limits.v_min_pu or v > limits.v_max_pu
+        if math.isfinite(float(v)) and (v < limits.v_min_pu or v > limits.v_max_pu)
     }
     line_violations = {
         int(i): float(x)
         for i, x in net.res_line["loading_percent"].items()
-        if x > limits.max_line_loading_percent
+        if math.isfinite(float(x)) and x > limits.max_line_loading_percent
     } if not net.res_line.empty else {}
     trafo_violations: dict[int, float] = {}
     reverse: dict[int, float] = {}
@@ -135,20 +152,21 @@ def assess_violations(
         trafo_violations = {
             int(i): float(x)
             for i, x in net.res_trafo["loading_percent"].items()
-            if x > limits.max_trafo_loading_percent
+            if math.isfinite(float(x)) and x > limits.max_trafo_loading_percent
         }
         reverse = {
             int(i): float(p)
             for i, p in net.res_trafo["p_hv_mw"].items()
-            if p < 0.0
+            if math.isfinite(float(p)) and p < 0.0
         }
     return ViolationReport(
         converged=True,
-        has_violation=bool(voltage_violations or line_violations or trafo_violations),
+        has_violation=bool(isolated or voltage_violations or line_violations or trafo_violations),
         voltage_violations=voltage_violations,
         line_violations=line_violations,
         trafo_violations=trafo_violations,
         reverse_power_flow=reverse,
+        isolated_buses=isolated,
         _limits=limits,
     )
 

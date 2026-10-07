@@ -93,5 +93,5 @@ Write-Host "Terminal 2 - Consumer (while Terminal 1 runs):" -ForegroundColor Yel
 Write-Host "  python ingestion/bronze_consumer.py --bootstrap-servers localhost:9092 --output-dir data/bronze -v" -ForegroundColor White
 Write-Host ""
 Write-Host "Terminal 3 - Query (after both finish):" -ForegroundColor Yellow
-Write-Host "  python ingestion_query.py" -ForegroundColor White
+Write-Host "  python scripts/debug/query_bronze.py" -ForegroundColor White
 Write-Host ""

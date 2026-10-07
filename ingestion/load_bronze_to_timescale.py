@@ -24,10 +24,13 @@ import argparse
 import csv
 import io
 import logging
+import os
 from pathlib import Path
 
 import psycopg2
 import pyarrow.parquet as pq
+
+DEFAULT_DB_URL = "postgresql://postgres:postgres@localhost:5432/gridsense"
 
 logger = logging.getLogger("gridsense_ingestion.load_bronze_to_timescale")
 
@@ -163,8 +166,8 @@ def main() -> None:
     parser.add_argument("--bronze-dir", default="data/bronze")
     parser.add_argument(
         "--db-url",
-        default="postgresql://postgres:postgres@localhost:5432/gridsense",
-        help="SQLAlchemy-style Postgres/TimescaleDB connection URL.",
+        default=os.getenv("GRIDSENSE_DB_URL", DEFAULT_DB_URL),
+        help="libpq connection URI (default: $GRIDSENSE_DB_URL, else the local dev database).",
     )
     parser.add_argument("--batch-size", type=int, default=5000)
     parser.add_argument("-v", "--verbose", action="store_true")

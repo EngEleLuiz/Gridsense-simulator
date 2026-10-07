@@ -1,10 +1,14 @@
 #!/usr/bin/env python
-"""Query the Bronze layer Parquet files.
+"""Ad-hoc sanity check of the Bronze Parquet lake (DuckDB, no server).
 
-Usage:
-  python ingestion_query.py
+Replaces the former root-level ``check.py``, ``query_bronze.py`` and
+``ingestion_query.py``, which all did the same count.
+
+Usage (from the repository root):
+    python scripts/debug/query_bronze.py [--bronze-dir data/bronze]
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -17,37 +21,40 @@ except ImportError:
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Count Bronze records per topic.")
+    parser.add_argument("--bronze-dir", default="data/bronze", type=Path)
+    bronze_dir = parser.parse_args().bronze_dir
+    glob = (bronze_dir / "**" / "*.parquet").as_posix()
     con = duckdb.connect()
-    
+
     # Check if bronze data exists
-    bronze_dir = Path("data/bronze")
     if not bronze_dir.exists():
-        print("✗ No data found in data/bronze/")
+        print(f"✗ No data found in {bronze_dir}/")
         print("  Run the consumer first: python ingestion/bronze_consumer.py ...")
         sys.exit(1)
-    
+
     parquet_files = list(bronze_dir.rglob("*.parquet"))
     if not parquet_files:
-        print("✗ No Parquet files found in data/bronze/")
+        print(f"✗ No Parquet files found in {bronze_dir}/")
         sys.exit(1)
-    
+
     print(f"✓ Found {len(parquet_files)} Parquet file(s)")
     print()
-    
+
     # Query: record count by topic
     try:
         result = con.execute("""
             SELECT topic, count(*) as n_records
-            FROM read_parquet('data/bronze/**/*.parquet')
+            FROM read_parquet(?)
             GROUP BY topic
             ORDER BY topic
-        """).fetchall()
-        
+        """, [glob]).fetchall()
+
         print("Records by topic:")
         for topic, count in result:
             print(f"  {topic}: {count} records")
         print()
-        
+
         # Sample data
         total = sum(count for _, count in result)
         if total > 0:
@@ -55,16 +62,16 @@ def main():
             print()
             print("Sample telemetry records:")
             con.execute("""
-                SELECT 
+                SELECT
                     raw_value::JSON->>'step' as step,
                     (raw_value::JSON->>'total_load_mw')::DOUBLE as total_load_mw,
                     (raw_value::JSON->>'total_generation_mw')::DOUBLE as total_gen_mw
-                FROM read_parquet('data/bronze/**/*.parquet')
+                FROM read_parquet(?)
                 WHERE topic = 'grid.telemetry.raw'
                 ORDER BY step::INT
                 LIMIT 10
-            """).show()
-        
+            """, params=[glob]).show()
+
     except Exception as e:
         print(f"✗ Query failed: {e}")
         sys.exit(1)

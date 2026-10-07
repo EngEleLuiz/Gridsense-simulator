@@ -91,8 +91,8 @@
     },
     {
       "id": 3,
-      "title": "Voltage Violation Rate by Bus (ANSI C84.1 Range A)",
-      "description": "Percentage of hourly readings outside the 0.95-1.05 p.u. tolerance. High rates on non-slack buses are expected in meshed networks: buses without local voltage support (no generator or compensator) float outside the band based on their position in the mesh. This is a property of the network topology, not a pipeline error.",
+      "title": "Voltage Violation Rate by Bus (in-scope buses, network band)",
+      "description": "Percentage of hourly in-scope readings outside the network's voltage band (network_voltage_limits seed). Slack, generator and MV buses are outside the voltage scope and are not shown. High rates on load buses are expected in meshed networks: buses without local voltage support (no generator or compensator) float outside the band based on their position in the mesh. This is a property of the network topology, not a pipeline error.",
       "type": "bargauge",
       "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
       "gridPos": { "h": 9, "w": 12, "x": 0, "y": 9 },
@@ -122,7 +122,7 @@
           "refId": "A",
           "format": "table",
           "datasource": { "type": "postgres", "uid": "gridsense-timescaledb" },
-          "rawSql": "SELECT 'Bus ' || bus_id::text AS metric, avg(violation_rate_pct) AS value FROM public_gold.mart_voltage_quality_hourly WHERE network = '$network' GROUP BY bus_id ORDER BY bus_id ASC",
+          "rawSql": "SELECT 'Bus ' || bus_id::text AS metric, avg(violation_rate_pct) AS value FROM public_gold.mart_voltage_quality_hourly WHERE network = '$network' AND is_in_scope GROUP BY bus_id ORDER BY bus_id ASC",
           "editorMode": "code",
           "rawQuery": true
         }

@@ -36,9 +36,9 @@ from .limits import (
 )
 from .qsts import QstsHCResult
 from .qsts import find_hosting_capacity as find_hosting_capacity_qsts
-from .quantiles import QuantileEstimate, quantile_with_ci
+from .quantiles import QuantileEstimate, min_samples_for_ci, quantile_with_ci
 from .scope import voltage_scope_buses
-from .search import BisectionOutcome, bisect_max_feasible
+from .search import SEARCH_DEFAULTS, BisectionOutcome, SearchDefaults, bisect_max_feasible, bisect_within
 from .stochastic import (
     AdoptionModel,
     ScenarioResult,
@@ -54,11 +54,11 @@ __all__ = [
     "AdoptionModel", "BaselineInfeasibleError", "BisectionOutcome", "CriterionKind",
     "DEFAULT_CRITICAL_LOAD_SCALE", "DeterministicHCResult", "FRAMEWORKS",
     "HostingCapacityError", "NETWORK_LIMITS", "NetworkLimits", "NoDaylightError",
-    "PVAllocation", "QstsHCResult", "QuantileEstimate", "ScenarioResult",
+    "PVAllocation", "QstsHCResult", "QuantileEstimate", "SEARCH_DEFAULTS", "ScenarioResult", "SearchDefaults",
     "StochasticHCEstimate", "StochasticHCResult", "StudyConditions", "TimeSeries",
     "ViolationReport", "VoltageFramework", "apply_allocation", "assess_violations",
-    "bisect_max_feasible", "build_synthetic_series", "check_violations",
+    "bisect_max_feasible", "bisect_within", "build_synthetic_series", "check_violations",
     "estimate_hosting_capacity_stochastic", "find_hosting_capacity_deterministic",
-    "find_hosting_capacity_qsts", "limits_for", "proportional_to_load",
+    "find_hosting_capacity_qsts", "limits_for", "min_samples_for_ci", "proportional_to_load",
     "quantile_with_ci", "run_monte_carlo", "run_power_flow", "voltage_scope_buses",
 ]

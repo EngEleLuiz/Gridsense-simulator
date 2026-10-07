@@ -23,7 +23,7 @@ def get_hourly_voltage(
     sql = text(
         """
         SELECT network, bus_id, hour_bucket, avg_voltage_pu, min_voltage_pu,
-               max_voltage_pu, stddev_voltage_pu, n_readings, n_violations,
+               max_voltage_pu, stddev_voltage_pu, is_in_scope, n_readings, n_violations,
                violation_rate_pct
         FROM public_gold.mart_voltage_quality_hourly
         WHERE (:network IS NULL OR network = :network)
@@ -47,11 +47,14 @@ def get_top_violations(
 ) -> list[HourlyVoltageQuality]:
     """Bus/hour combinations with the highest voltage-violation rate,
     worst first -- the "which buses need attention" endpoint.
+
+    Buses outside the voltage scope (slack, generator, MV) have a NULL
+    rate and therefore never appear here.
     """
     sql = text(
         """
         SELECT network, bus_id, hour_bucket, avg_voltage_pu, min_voltage_pu,
-               max_voltage_pu, stddev_voltage_pu, n_readings, n_violations,
+               max_voltage_pu, stddev_voltage_pu, is_in_scope, n_readings, n_violations,
                violation_rate_pct
         FROM public_gold.mart_voltage_quality_hourly
         WHERE (:network IS NULL OR network = :network)

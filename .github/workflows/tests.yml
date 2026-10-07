@@ -23,9 +23,13 @@ on:
 permissions:
   contents: read
 
+# Superseded runs are cancelled on feature branches and PRs, but never on
+# main: every merge to main must leave a completed run behind, otherwise
+# merging several PRs in a row cancels them all and the badge turns red
+# without any real failure (review finding R21).
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   PYTHONUNBUFFERED: "1"
@@ -67,8 +71,9 @@ jobs:
         run: |
           missing=0
           for f in Makefile docker-compose.yml transform/seeds/network_voltage_limits.csv \
+                   transform/seeds/network_voltage_scope.csv scripts/generate_voltage_scope_seed.py \
                    scripts/run_hosting_capacity_study.py scripts/ci/jsonl_to_bronze.py \
-                   scripts/ci/assert_e2e.py; do
+                   scripts/ci/assert_e2e.py scripts/debug/check_db.py; do
             [ -f "$f" ] || { echo "::error file=$f::Required file is missing"; missing=1; }
           done
           exit $missing
@@ -252,6 +257,8 @@ jobs:
           run --methods qsts --qsts-total-steps 24 --qsts-steps-per-day 24 --tolerance 0.1 -v
           # A study that MUST be recorded as baseline_infeasible, never as a capacity
           run --framework prodist_m8_bt --load-scale 1.0 --methods deterministic -v
+          # An under-powered stochastic study (n=8: no 95% CI for p10) -- kept, never comparable
+          run --framework prodist_m8_bt --methods stochastic --mc-n-scenarios 8 --tolerance 0.05 -v
 
       - name: Load HC results into TimescaleDB
         run: /tmp/sim/bin/python ingestion/load_hosting_capacity_to_timescale.py --results-dir "$WORK/hc" --db-url "$DB_URL" -v

@@ -70,3 +70,10 @@ def test_empty_allocation_raises(cigre) -> None:
 def test_non_positive_load_scale_raises(cigre) -> None:
     with pytest.raises(ValueError):
         det(copy.deepcopy(cigre), "cigre_lv", load_scale=0.0)
+
+
+def test_result_reports_whether_the_bracket_closed(cigre) -> None:
+    """R12: an unresolved bracket (max_bisections hit) is now visible."""
+    assert det(cigre, "cigre_lv").resolved is True
+    coarse = det(cigre, "cigre_lv", max_bisections=1)
+    assert coarse.bounded and coarse.resolved is False
