@@ -21,9 +21,9 @@ account, managed service, or paid license is required at any phase.
 | 4 — API & dashboards | ✅ | `api/` (FastAPI) and `grafana/` (3 provisioned dashboards). See [`api/README.md`](api/README.md), [`grafana/README.md`](grafana/README.md). |
 | 5 — Network migration | ✅ | `cigre_lv`, a 44-bus radial LV distribution feeder (CIGRE TF C6.04.02), alongside `case14/39/57/118`. |
 | 6 — Hosting-capacity methods | ✅ | Deterministic, stochastic and QSTS hosting capacity, compared in a dbt mart, served by the API and a dashboard. |
-| **6.1 — Methodology review & bugfixes** | ✅ **current** | Line-by-line review against the literature: 12 fixes that change published numbers, then a post-merge code review (R01–R22). See [below](#phase-61--methodology-review-and-bugfixes) and [`docs/CHANGES_phase6-bugfix.md`](docs/CHANGES_phase6-bugfix.md). |
-| 7 — Certified surrogate + open dataset | 🔄 in progress, not merged | Physics prior (LinDistFlow) + learned residual with conformal screening, as an accelerator inside the Phase 6 estimators. |
-| 8 — Real data | 🔲 planned | Real irradiance (SONDA/INMET) and residential load replacing the synthetic profiles. |
+| 6.1 — Methodology review & bugfixes | ✅ | Line-by-line review against the literature: 12 fixes that change published numbers, then a post-merge code review (R01–R22). See [below](#phase-61--methodology-review-and-bugfixes) and [`docs/CHANGES_phase6-bugfix.md`](docs/CHANGES_phase6-bugfix.md). |
+| **7 — Real data** | ✅ **current** | Six open, citable datasets (INMET, NASA POWER, PVGIS, Ausgrid, Low Carbon London, SimBench) with checksummed caching, measured timing checks and quality reports, turned into QSTS series with a provenance manifest. See [below](#phase-7--real-data) and [`docs/DATASETS.md`](docs/DATASETS.md). |
+| 8 — Certified surrogate + open dataset | 🔲 planned (prototype outside the repo) | Physics prior (LinDistFlow) + learned residual with conformal screening, as an accelerator inside the Phase 6 estimators. Renumbered from 7: its large speed-up needs the duration criterion τ̄ and benefits from real-data training. |
 | 9 — Streaming HC / operating envelope | 🔲 planned | Continuous envelope recomputation over the existing Kafka pipeline. |
 
 ## Phase 6.1 — methodology review and bugfixes
@@ -74,12 +74,56 @@ search power flows than the global bisection, same bracket).
 
 **Still open** (scientific work, not bugs): QSTS has no duration
 criterion τ̄ (C7) or tap control (C8); the synthetic load peaks at
-midday together with solar (C9), so **no PRODIST QSTS number exists
-yet**; severity metrics VVSI/OSI/RPFI are not implemented (C13). The
+midday together with solar (C9 — resolved by the real data of Phase 7); severity metrics VVSI/OSI/RPFI are not implemented (C13). The
 raw synthetic profile reaches ~1.19× nominal load, which makes long QSTS
 runs baseline-infeasible on `cigre_lv` (R22): pass
 `--qsts-peak-load 1.0` (nominal load = peak demand) — an explicit,
 recorded modelling choice.
+
+## Phase 7 — real data
+
+The synthetic profiles are replaced by measured, open data
+([`docs/DATASETS.md`](docs/DATASETS.md), changelog in
+[`docs/CHANGES_phase7-real-datasets.md`](docs/CHANGES_phase7-real-datasets.md)):
+
+| Key | Provides | Coverage | Step |
+|---|---|---|---|
+| `inmet` | GHI + temperature, ground stations | Brazil, ~600 stations | 1 h |
+| `nasa_power` | GHI + temperature, satellite/reanalysis | global | 1 h |
+| `pvgis` | PV per kWp, tilted plane (JRC model) | global | 1 h |
+| `ausgrid` | household load + gross PV, 300 homes | Sydney (southern hemisphere) | 30 min |
+| `lcl` | household load, 5,567 homes | London | 30 min |
+| `simbench` | benchmark load/PV profiles (pip package, offline) | Germany | 15 min |
+
+```bash
+pip install -e "simulator[dev,fast,data]"
+gridsense-data qc inmet --opt station=A806 --opt year=2023        # quality report
+make series-flo                                                    # Ausgrid homes + INMET A806, Jan 2023
+make hc-qsts-real                                                  # QSTS on that series
+```
+
+Every loader was run on a genuine file from its source. The timing conventions were
+**measured against solar noon**, not taken from documentation. INMET stamps the end of the hour;
+Ausgrid follows the Sydney wall clock *with* DST; Low Carbon London is UTC;
+SimBench is CET/CEST. Every series records the SHA-256 of each raw file, the
+full quality report and the transformations in a manifest whose hash is
+stored with each QSTS result.
+
+**First real-data QSTS numbers** (`cigre_lv`, 299 Ausgrid homes + INMET
+A806, 28 days at 15 min, zero tolerance, horizontal PV model — preliminary):
+
+| Window | Criterion | λ | Total PV | Binding |
+|---|---|---|---|---|
+| Jan (summer) | EN 50160 envelope | 1.961 | 1.347 MW | trafo 0 |
+| Jan (summer) | PRODIST M8 BT | — | — | `baseline_infeasible` (evening peak, bus 35 at 0.918 pu) |
+| Jun (winter) | EN 50160 envelope | 3.158 | 2.168 MW | trafo 0 |
+| Jun (winter) | PRODIST M8 BT | 2.302 | 1.581 MW | overvoltage, bus 16 |
+| Jan, *sensitivity: peak load ×0.9* | PRODIST M8 BT | 1.383 | 0.949 MW | overvoltage, bus 16 |
+
+The real load peaks at 18 h, which closes finding C9. That made the first PRODIST QSTS number possible.
+On `cigre_lv` the PRODIST baseline only holds for load ≤ ×0.919, so a hot-week
+evening peak makes zero-tolerance QSTS undefined. That is the case for the
+duration / PV-attributable criterion (C7), which is still open.
 
 ## Architecture
 
@@ -197,6 +241,7 @@ python scripts/run_hosting_capacity_study.py --network cigre_lv \
 | `--mc-adoption-min/max`, `--mc-size-dispersion` | Adoption model (assumptions — run a sensitivity analysis before citing). |
 | `--qsts-total-steps`, `--qsts-steps-per-day` | QSTS horizon (default 60 days at 5 min). Cost ≈ one power flow per step for the baseline gate plus about one per daylight step for the search. |
 | `--qsts-peak-load` | Rescale the synthetic load so its peak equals this multiplier (e.g. `1.0`). Required for long `cigre_lv` runs (R22); recorded in the payload. |
+| `--qsts-series` | Run QSTS on a real-data series from `gridsense-data build-series` (Phase 7). The file is integrity-checked; its manifest SHA-256 is recorded with the result. Replaces the synthetic-profile options. |
 
 **Reading the results.** Compare only rows with `is_comparable = true`,
 the same `criterion_framework`, and (for snapshot methods) the same
@@ -228,6 +273,8 @@ curl "http://localhost:8000/api/v1/hosting-capacity/compare?comparable_only=fals
 ```bash
 make test        # simulator + ingestion + API (no Docker needed)
 make test-hc     # hosting-capacity tests only (~40 s)
+make test-datasets   # Phase 7 loaders, QC, series builder (offline fixtures)
+make test-real-data  # the same checks on genuine raw files in $GRIDSENSE_REAL_DATA_DIR
 make lint        # same ruff checks as CI
 make dbt-build   # dbt tests (needs TimescaleDB running)
 ```
@@ -235,6 +282,7 @@ make dbt-build   # dbt tests (needs TimescaleDB running)
 | Suite | Where | What it covers |
 |---|---|---|
 | Simulator | `simulator/tests/test_hc_*.py`, `test_study_runner.py`, `test_provenance.py`, `test_engine.py` | Every C/N/R fix, golden numbers, payload v2, cross-layer limits **and voltage scope** (Python ↔ dbt seeds), QSTS strategy equivalence |
+| Datasets | `simulator/tests/test_datasets_*.py` | Every loader on format-faithful fixtures (real layouts and quirks), timing conventions vs solar geometry, QC, cache (checksums, mirrors, offline), series builder (clocks, seasons, normalisation, gaps, provenance, tamper detection), QSTS + runner on a real series; opt-in real-file suite |
 | Ingestion | `ingestion/tests/` | Bronze consumer (Kafka mocked), HC loader (psycopg2 mocked) |
 | API | `api/tests/` | All endpoints (DB session mocked), `comparable_only` default |
 | dbt | `transform/tests/`, schema YAML | Voltage limits and scope per network, out-of-scope buses never violate, seed keys unique, HC bracket ordering, comparable rows complete (stochastic needs a CI), non-negative capacity |
@@ -276,12 +324,16 @@ gridsense-simulator/
 ├── docs/
 │   ├── CHANGES_phase6-bugfix.md     # Phase 6.1 changelog (C/N fixes)
 │   ├── CHANGES_phase6.1-review-fixes.md  # post-merge review fixes (R01–R22)
+│   ├── CHANGES_phase7-real-datasets.md   # Phase 7 changelog and first real-data results
+│   ├── DATASETS.md                  # sources, licences, measured quirks, QC, series pipeline
 │   └── CODE_REVIEW_phase6-bugfix.md # post-merge review, open issues
 ├── simulator/
 │   ├── gridsense_sim/
 │   │   ├── hosting_capacity/        # limits, scope, violations, baseline, search,
 │   │   │                            # conditions, allocation, quantiles, timeseries,
 │   │   │                            # deterministic, stochastic, qsts, errors
+│   │   ├── datasets/                # Phase 7: inmet, nasa_power, pvgis, ausgrid, lcl,
+│   │   │                            # simbench_profiles, cache, quality, solar, series, cli
 │   │   ├── provenance.py            # git commit + library versions per result
 │   │   ├── engine.py, cli.py, profiles.py, scenarios.py, ...
 │   └── tests/                       # test_hc_*.py: one file per module
@@ -294,7 +346,7 @@ gridsense-simulator/
 ├── transform/                       # dbt: seeds, staging/silver/gold, tests
 ├── api/                             # FastAPI read layer (+ Dockerfile)
 ├── grafana/                         # provisioning + 3 dashboards
-└── data/                            # generated, gitignored
+└── data/                            # generated, gitignored (raw/ cache, series/, bronze/, ...)
 ```
 
 ## License

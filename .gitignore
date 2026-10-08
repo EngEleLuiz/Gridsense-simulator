@@ -10,6 +10,7 @@ dist/
 data/bronze/
 data/raw/
 data/hosting_capacity/
+data/series/
 transform/target/
 transform/dbt_packages/
 transform/logs/
