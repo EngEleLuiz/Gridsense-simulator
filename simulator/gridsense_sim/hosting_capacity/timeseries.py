@@ -22,9 +22,12 @@ profile so its peak equals 1.0. That is a *modelling choice*, so it is
 opt-in (``peak_load_mult``) and recorded with the result -- never
 applied invisibly.
 
-Known limitation (C9, fixed in S2/Phase 8, not here): the synthetic
-``LoadProfile`` peaks at midday, coinciding with solar. With that
-shape QSTS cannot differ much from the snapshot method.
+Known limitation of the *synthetic* profile (C9): ``LoadProfile`` peaks
+at midday, coinciding with solar, so QSTS cannot differ much from the
+snapshot method. Phase 7 resolves it with real data: see
+:mod:`gridsense_sim.datasets.series`, which builds a :class:`TimeSeries`
+from measured load and irradiance and tags it with ``source`` and the
+SHA-256 of its provenance manifest.
 """
 
 from __future__ import annotations
@@ -45,12 +48,16 @@ class TimeSeries:
         pv_mult: PV output per unit of rating per step, in [0, 1].
         steps_per_day: Temporal resolution.
         start_step: Absolute index of the first step (for reporting).
+        source: ``"synthetic"`` or ``"real:<load dataset>+<pv dataset>"``.
+        manifest_sha256: Hash of the provenance manifest of a real series.
     """
 
     load_mult: np.ndarray
     pv_mult: np.ndarray
     steps_per_day: int
     start_step: int = 0
+    source: str = "synthetic"
+    manifest_sha256: str | None = None
 
     def __post_init__(self) -> None:
         lm = np.array(self.load_mult, dtype=float, copy=True)
