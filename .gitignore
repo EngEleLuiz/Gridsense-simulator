@@ -7,13 +7,19 @@ venv/
 *.jsonl
 build/
 dist/
-data/bronze/
-data/raw/
-data/hosting_capacity/
-data/series/
+# Everything generated or downloaded under data/ (raw datasets, series, results, bronze)
+data/
 transform/target/
 transform/dbt_packages/
 transform/logs/
 transform/.user.yml
 *.parquet
 .env
+
+# Local tooling output
+.ruff_cache/
+.coverage
+coverage.xml
+reports/
+reports.xml
+*.part
