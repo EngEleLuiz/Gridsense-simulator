@@ -70,13 +70,13 @@ YEAR_FILES = {
     "2011-2012": "2011-2012 Solar home electricity data v2.csv",
     "2012-2013": "2012-2013 Solar home electricity data v2.csv",
 }
-YEAR_URLS = {
-    "2010-2011": ["https://www.ausgrid.com.au/-/media/Documents/Data-to-share/Solar-home-electricity-data/"
-                  "Solar-home-half-hour-data---1-July-2010-to-30-June-2011.zip"],
-    "2011-2012": ["https://www.ausgrid.com.au/-/media/Documents/Data-to-share/Solar-home-electricity-data/"
-                  "Solar-home-half-hour-data---1-July-2011-to-30-June-2012.zip"],
-    "2012-2013": ["https://www.ausgrid.com.au/-/media/Documents/Data-to-share/Solar-home-electricity-data/"
-                  "Solar-home-half-hour-data---1-July-2012-to-30-June-2013.zip"],
+# The Ausgrid server URLs used by earlier drafts could not be verified and the
+# portal is currently unavailable. No automatic download is attempted: download
+# the yearly files from the official page and pass them with --source-file.
+YEAR_URLS: dict[str, list[str]] = {
+    "2010-2011": [],
+    "2011-2012": [],
+    "2012-2013": [],
 }
 RESOLUTION = pd.Timedelta("30min")
 TZ = "Australia/Sydney"

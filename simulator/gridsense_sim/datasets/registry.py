@@ -7,7 +7,8 @@ and returns a :class:`~.base.ProfileSet`. ``options`` are dataset-specific
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from . import ausgrid, inmet, lcl, nasa_power, pvgis, simbench_profiles
 from .base import DatasetInfo, ProfileSet

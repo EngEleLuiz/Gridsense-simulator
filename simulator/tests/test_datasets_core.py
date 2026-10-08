@@ -7,9 +7,13 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
-
 from _dataset_fixtures import FLO, clear_sky_ghi
-from gridsense_sim.datasets import DataCache, DataNotAvailableError, ProfileKind, ProfileSet
+from gridsense_sim.datasets import (
+    DataCache,
+    DataNotAvailableError,
+    ProfileKind,
+    ProfileSet,
+)
 from gridsense_sim.datasets.cache import ChecksumMismatchError
 from gridsense_sim.datasets.quality import (
     QualityReport,

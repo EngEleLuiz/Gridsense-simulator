@@ -77,7 +77,7 @@ class SourceFile:
     url: str | None = None
 
     @classmethod
-    def from_path(cls, path: str | Path, url: str | None = None) -> "SourceFile":
+    def from_path(cls, path: str | Path, url: str | None = None) -> SourceFile:
         p = Path(path)
         return cls(path=str(p), sha256=sha256_file(p), size_bytes=p.stat().st_size, url=url)
 
@@ -119,7 +119,7 @@ class ProfileSet:
     site: Site | None = None
     sources: tuple[SourceFile, ...] = ()
     meta: dict[str, Any] = field(default_factory=dict)
-    quality: "QualityReport | None" = None
+    quality: QualityReport | None = None
 
     def __post_init__(self) -> None:
         idx = self.data.index
@@ -147,7 +147,7 @@ class ProfileSet:
         """Exclusive end of the last interval."""
         return self.data.index[-1] + self.resolution
 
-    def select(self, columns: list[str]) -> "ProfileSet":
+    def select(self, columns: list[str]) -> ProfileSet:
         missing = [c for c in columns if c not in self.data.columns]
         if missing:
             raise KeyError(f"{self.dataset}: unknown series {missing[:5]}")

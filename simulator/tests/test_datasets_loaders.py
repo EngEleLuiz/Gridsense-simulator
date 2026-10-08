@@ -4,12 +4,22 @@ from __future__ import annotations
 
 import zipfile
 
+import _dataset_fixtures as fx
 import pandas as pd
 import pytest
-
-import _dataset_fixtures as fx
-from gridsense_sim.datasets import DATASETS, DatasetError, ProfileKind, load_dataset, parse_options
-from gridsense_sim.datasets import ausgrid, inmet, lcl, nasa_power, pvgis, simbench_profiles
+from gridsense_sim.datasets import (
+    DATASETS,
+    DatasetError,
+    ProfileKind,
+    ausgrid,
+    inmet,
+    lcl,
+    load_dataset,
+    nasa_power,
+    parse_options,
+    pvgis,
+    simbench_profiles,
+)
 from gridsense_sim.datasets.quality import QualityReport, check_solar_alignment
 
 

@@ -221,8 +221,8 @@ def alignment_offset_minutes(
 
 
 __all__ = [
-    "PVModel",
     "SOLAR_CONSTANT_WM2",
+    "PVModel",
     "alignment_offset_minutes",
     "bsrn_ghi_limits",
     "cos_zenith",

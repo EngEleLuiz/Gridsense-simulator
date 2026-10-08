@@ -30,14 +30,20 @@ from __future__ import annotations
 
 import io
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import pandas as pd
 
 from .base import DatasetError, DatasetInfo, ProfileKind, ProfileSet, Site, SourceFile
 from .cache import DataCache
-from .quality import QualityReport, clip_negative, fill_short_gaps, flag_flatlines, regularize
+from .quality import (
+    QualityReport,
+    clip_negative,
+    fill_short_gaps,
+    flag_flatlines,
+    regularize,
+)
 
 INFO = DatasetInfo(
     key="lcl",

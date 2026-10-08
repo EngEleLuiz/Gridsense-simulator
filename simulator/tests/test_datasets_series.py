@@ -6,23 +6,23 @@ import json
 import sys
 from pathlib import Path
 
+import _dataset_fixtures as fx
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 import pytest
-
-import _dataset_fixtures as fx
 from gridsense_sim.datasets import (
     PRESET_SITES,
     DatasetError,
     ProfileKind,
     ProfileSet,
     Site,
+    ausgrid,
     build_series,
+    inmet,
     load_series,
     save_series,
 )
-from gridsense_sim.datasets import ausgrid, inmet
 from gridsense_sim.datasets.quality import QualityReport
 from gridsense_sim.hosting_capacity import find_hosting_capacity_qsts
 
@@ -160,7 +160,7 @@ def test_qsts_runs_on_a_real_series_and_reports_its_provenance(cigre) -> None:
     assert r.series_manifest_sha256 == real.manifest_sha256
 
 
-def test_runner_records_real_series_params(tmp_path, cigre) -> None:  # noqa: ARG001
+def test_runner_records_real_series_params(tmp_path, cigre) -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
     import run_hosting_capacity_study as study
 
@@ -180,3 +180,14 @@ def test_runner_records_real_series_params(tmp_path, cigre) -> None:  # noqa: AR
     assert payload["params"]["series_manifest_sha256"] == real.manifest_sha256
     assert payload["series_source"] == "real:demo_load+demo_irr"
     assert "total_steps" not in payload["params"]  # synthetic-only knobs are not recorded
+
+
+def test_manifest_hash_is_reproducible_across_builds(tmp_path) -> None:
+    """Same inputs -> same manifest hash, even though created_at_utc differs."""
+    load, pv = _load_set(SOUTH_LOAD_SITE), _irr_set()
+    a = build_series(load, pv, target=FLO, start="2023-02-01", days=2)
+    b = build_series(load, pv, target=FLO, start="2023-02-01", days=2)
+    assert a.manifest_sha256 == b.manifest_sha256
+    assert a.manifest["arrays_sha256"] == b.manifest["arrays_sha256"]
+    back = load_series(save_series(a, tmp_path / "rt"))
+    assert back.manifest_sha256 == a.manifest_sha256

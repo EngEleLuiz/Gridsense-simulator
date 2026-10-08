@@ -113,8 +113,8 @@ def load(
     kind: str = "load",
     profiles: list[str] | str | None = None,
     scenario: int = 0,
-    cache=None,  # noqa: ARG001 - uniform loader signature
-    source_file=None,  # noqa: ARG001
+    cache=None,
+    source_file=None,
 ) -> ProfileSet:
     """``kind='load'`` (default ``H0-A,H0-B,H0-C`` household profiles) or ``'pv'``."""
     sb = _require_simbench()

@@ -403,7 +403,10 @@ def build_series(
         "arrays_sha256": digest,
     }
     manifest = json.loads(json.dumps(manifest, sort_keys=True, default=str))  # JSON-normal form
-    manifest["manifest_sha256"] = _canonical_sha(manifest)
+    # created_at_utc is metadata, not content: leaving it in the hash made the
+    # same series hash differently on every build (measured on the real LCL file).
+    body = {k: v for k, v in manifest.items() if k != "created_at_utc"}
+    manifest["manifest_sha256"] = _canonical_sha(body)
     ts = TimeSeries(
         load_mult=load_mult, pv_mult=pv_mult, steps_per_day=steps_per_day, start_step=0,
         source=f"real:{load.dataset}+{pv.dataset}", manifest_sha256=manifest["manifest_sha256"],
@@ -451,7 +454,7 @@ def load_series(path: str | Path) -> RealSeries:
     pv_mult = table.column("pv_mult").to_numpy()
     if _digest_arrays(load_mult, pv_mult) != manifest.get("arrays_sha256"):
         raise DatasetError(f"{path}: series values do not match the manifest (file was modified).")
-    body = {k: v for k, v in manifest.items() if k != "manifest_sha256"}
+    body = {k: v for k, v in manifest.items() if k not in ("manifest_sha256", "created_at_utc")}
     if _canonical_sha(body) != manifest.get("manifest_sha256"):
         raise DatasetError(f"{path}: manifest content does not match its own hash.")
     ts = TimeSeries(
@@ -463,5 +466,11 @@ def load_series(path: str | Path) -> RealSeries:
     return RealSeries(ts, idx, manifest)
 
 
-__all__ = ["PRESET_SITES", "RealSeries", "SERIES_SCHEMA_VERSION", "build_series", "load_series",
-           "save_series"]
+__all__ = [
+    "PRESET_SITES",
+    "SERIES_SCHEMA_VERSION",
+    "RealSeries",
+    "build_series",
+    "load_series",
+    "save_series",
+]

@@ -16,7 +16,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
 from gridsense_sim.datasets.solar import interval_mean_cos_zenith
 
 FLO = (-27.6025, -48.62)
@@ -81,7 +80,7 @@ def write_inmet_headerless(path: Path, days: int = 10) -> Path:
 
 # -------------------------------------------------------------- Ausgrid
 def ausgrid_slot_labels() -> list[str]:
-    labels = [f"{h}:{m:02d}" for h in range(0, 24) for m in (0, 30)][1:]
+    labels = [f"{h}:{m:02d}" for h in range(24) for m in (0, 30)][1:]
     return labels + ["0:00"]
 
 

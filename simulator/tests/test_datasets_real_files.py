@@ -19,7 +19,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 from gridsense_sim.datasets import ausgrid, inmet, lcl, nasa_power, pvgis
 
 ROOT = os.environ.get("GRIDSENSE_REAL_DATA_DIR")

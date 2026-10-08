@@ -21,7 +21,13 @@ import pandas as pd
 
 from .base import DatasetError, DatasetInfo, ProfileKind, ProfileSet, Site, SourceFile
 from .cache import DataCache, build_url
-from .quality import QualityReport, check_irradiance, check_solar_alignment, fill_short_gaps, regularize
+from .quality import (
+    QualityReport,
+    check_irradiance,
+    check_solar_alignment,
+    fill_short_gaps,
+    regularize,
+)
 
 INFO = DatasetInfo(
     key="nasa_power",
