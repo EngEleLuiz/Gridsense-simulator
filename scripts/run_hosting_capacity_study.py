@@ -27,6 +27,12 @@ finish are still written; the script then exits with code 1.
 
 Arguments are validated before any power flow runs (finding R09).
 
+Real data (Phase 7): ``--qsts-series PATH`` runs QSTS on a series built by
+``gridsense-data build-series`` (measured load + irradiance). The file's
+integrity is verified on load and its manifest SHA-256, source and path
+are recorded in ``params`` and in the result, so every number points back
+to the exact raw files it came from.
+
 For ``stochastic``, ``lambda_max``/``total_pv_mw`` hold ``F^-1(alpha)``
 (``alpha`` recorded), i.e. the conservative stochastic HC; the legacy
 budget-bound estimator is no longer written by this script.
@@ -171,6 +177,10 @@ def _run_stochastic(
 
 def _run_qsts(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
     r = find_hosting_capacity_qsts(net, network, **kw)
+    series_fields = {
+        "series_source": r.series_source,
+        "series_manifest_sha256": r.series_manifest_sha256,
+    }
     return {
         "lambda_max": r.lambda_max,
         "lambda_fail": r.lambda_fail,
@@ -187,6 +197,7 @@ def _run_qsts(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
         "steps_per_day": r.steps_per_day,
         "daylight_steps": r.daylight_steps,
         "power_flows": r.power_flows,
+        **series_fields,
     }
 
 
@@ -201,6 +212,8 @@ def build_records(
     stochastic_alpha: float = 0.10,
     include_stochastic_scenarios: bool = False,
     network_factory: Callable[[], pp.pandapowerNet] | None = None,
+    qsts_series: Any = None,
+    qsts_series_info: dict | None = None,
 ) -> list[dict]:
     """Run the requested methods; one Bronze row per method.
 
@@ -221,7 +234,13 @@ def build_records(
                 n, network_name, stochastic_kwargs, stochastic_alpha, include_stochastic_scenarios
             ),
         ),
-        "qsts": (qsts_kwargs, lambda n: _run_qsts(n, network_name, qsts_kwargs)),
+        "qsts": (
+            {**qsts_kwargs, **(qsts_series_info or {})},
+            lambda n: _run_qsts(
+                n, network_name,
+                {**qsts_kwargs, "series": qsts_series} if qsts_series is not None else qsts_kwargs,
+            ),
+        ),
     }
 
     records: list[dict] = []
@@ -345,6 +364,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Rescale the synthetic load profile so its peak equals this multiplier "
                         "(e.g. 1.0: nominal load = peak demand). Without it, a 60-day cigre_lv "
                         "series is baseline-infeasible (review finding R22). Recorded in params.")
+    p.add_argument("--qsts-series", default=None, metavar="PATH",
+                   help="Real-data series (.parquet) from 'gridsense-data build-series'. Replaces the "
+                        "synthetic profile; --qsts-total-steps/--qsts-steps-per-day/--qsts-peak-load "
+                        "then do not apply.")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
@@ -365,6 +388,11 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         (args.qsts_total_steps >= 1, "--qsts-total-steps must be >= 1"),
         (args.qsts_steps_per_day >= 1, "--qsts-steps-per-day must be >= 1"),
         (args.qsts_peak_load is None or args.qsts_peak_load > 0, "--qsts-peak-load must be > 0"),
+        (args.qsts_series is None or Path(args.qsts_series).is_file(),
+         f"--qsts-series {args.qsts_series} does not exist"),
+        (args.qsts_series is None or args.qsts_peak_load is None,
+         "--qsts-peak-load does not apply to --qsts-series (the series is already normalised; "
+         "use 'gridsense-data build-series --peak-load')"),
     ]
     for ok, message in checks:
         if not ok:
@@ -391,6 +419,32 @@ def main(argv: list[str] | None = None) -> None:
     )
     _warn_underpowered(args)
     common = {"framework": args.framework, "tolerance": args.tolerance}
+    qsts_kwargs: dict[str, Any] = {
+        **common,
+        "total_steps": args.qsts_total_steps,
+        "steps_per_day": args.qsts_steps_per_day,
+        "profile_seed": args.seed,
+        "peak_load_mult": args.qsts_peak_load,
+    }
+    qsts_series = None
+    qsts_series_info = None
+    if args.qsts_series and "qsts" in args.methods:
+        from gridsense_sim.datasets import load_series  # needs pyarrow (already required here)
+
+        real = load_series(args.qsts_series)
+        qsts_series = real.series
+        qsts_kwargs = dict(common)
+        qsts_series_info = {
+            "series_path": str(args.qsts_series),
+            "series_manifest_sha256": real.manifest_sha256,
+            "series_source": real.series.source,
+            "series_steps_per_day": real.series.steps_per_day,
+            "series_n_steps": real.series.n_steps,
+            "series_start_local": real.manifest.get("start_local"),
+            "series_site": real.manifest.get("target_site", {}).get("name"),
+        }
+        logger.info("QSTS on real series %s (%s, manifest %s)", args.qsts_series,
+                    real.series.source, real.manifest_sha256[:12])
     records = build_records(
         network_name=args.network,
         methods=args.methods,
@@ -407,15 +461,11 @@ def main(argv: list[str] | None = None) -> None:
                 size_dispersion=args.mc_size_dispersion,
             ),
         },
-        qsts_kwargs={
-            **common,
-            "total_steps": args.qsts_total_steps,
-            "steps_per_day": args.qsts_steps_per_day,
-            "profile_seed": args.seed,
-            "peak_load_mult": args.qsts_peak_load,
-        },
+        qsts_kwargs=qsts_kwargs,
         stochastic_alpha=args.mc_alpha,
         include_stochastic_scenarios=args.mc_include_scenarios,
+        qsts_series=qsts_series,
+        qsts_series_info=qsts_series_info,
     )
     write_records_to_parquet(records, args.output_dir)
     failed = [r["method"] for r in records if json.loads(r["raw_value"])["status"] == "error"]

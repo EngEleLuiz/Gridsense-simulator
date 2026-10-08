@@ -79,6 +79,8 @@ class QstsHCResult:
     conditions: StudyConditions
     strategy: str = "min_over_steps"
     peak_load_mult: float | None = None
+    series_source: str = "synthetic"
+    series_manifest_sha256: str | None = None
 
 
 def find_hosting_capacity(
@@ -206,6 +208,8 @@ def find_hosting_capacity(
         conditions=conditions,
         strategy=strategy,
         peak_load_mult=peak_load_mult if series is None else None,
+        series_source=ts.source,
+        series_manifest_sha256=ts.manifest_sha256,
     )
 
 

@@ -1,11 +1,11 @@
 [project]
 name = "gridsense-sim"
 version = "0.1.0"
-description = "Electrical grid digital twin simulator (Phase 1: local power-flow simulation engine)"
+description = "Electrical grid digital twin simulator: power flow, hosting capacity and real-data profiles"
 requires-python = ">=3.10"
 dependencies = [
     "pandapower>=2.14",
-    "pandas>=1.5",
+    "pandas>=2.2",  # groupby.apply(include_groups=...), to_datetime(format="mixed")
     "numpy>=1.23",
     "scipy>=1.10",
 ]
@@ -21,9 +21,14 @@ fast = [
 kafka = [
     "confluent-kafka>=2.3",
 ]
+data = [
+    "pyarrow>=14",
+    "simbench>=1.5",
+]
 
 [project.scripts]
 gridsense-sim = "gridsense_sim.cli:main"
+gridsense-data = "gridsense_sim.datasets.cli:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

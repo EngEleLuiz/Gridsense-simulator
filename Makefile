@@ -16,6 +16,7 @@ DBT_ARGS := --project-dir transform --profiles-dir transform
 .PHONY: help up down logs status produce consume-bronze query-bronze \
         load-timescale seed-scope dbt-seed dbt-run dbt-test dbt-build dbt-docs \
         hc-study hc-qsts hc-load api-run \
+        data-list data-qc series-flo hc-qsts-real test-datasets test-real-data \
         test test-simulator test-hc test-ingestion test-api lint
 
 help:
@@ -92,6 +93,25 @@ hc-load: ## HC Parquet -> bronze.hosting_capacity_results (idempotent)
 	$(PYTHON) ingestion/load_hosting_capacity_to_timescale.py \
 		--results-dir $(HC_DIR) --db-url $(DB_URL) -v
 
+# ------------------------------------------------------- real data (Phase 7)
+SERIES_DIR ?= data/series
+FLO_SERIES ?= $(SERIES_DIR)/flo_ausgrid_inmet_2023-01.parquet
+
+data-list: ## List the six registered real datasets
+	gridsense-data list
+
+data-qc: ## Quality report for INMET A806 (Florianopolis) 2023 (downloads ~100 MB once)
+	gridsense-data qc inmet --opt station=A806 --opt year=2023
+
+series-flo: ## Real QSTS series: Ausgrid homes + INMET A806, 28 days of Jan 2023 at 15 min
+	gridsense-data build-series --load ausgrid --pv inmet \
+		--pv-opt station=A806 --pv-opt year=2023 --site florianopolis \
+		--start 2023-01-09 --days 28 --steps-per-day 96 --out $(FLO_SERIES)
+
+hc-qsts-real: ## QSTS on the real Florianopolis series (run series-flo first)
+	$(PYTHON) scripts/run_hosting_capacity_study.py --network cigre_lv \
+		--methods qsts --qsts-series $(FLO_SERIES) --output-dir $(HC_DIR) -v
+
 # ------------------------------------------------------------------ api
 api-run: ## Serve the Gold layer on :8000 (docs at /docs)
 	cd api && \
@@ -105,6 +125,13 @@ test-simulator: ## All simulator tests
 
 test-hc: ## Hosting-capacity tests only (~40-80 s)
 	$(PYTHON) -m pytest simulator/tests/test_hc_*.py simulator/tests/test_study_runner.py -q -ra
+
+test-datasets: ## Phase 7 dataset tests (fixtures; offline)
+	$(PYTHON) -m pytest simulator/tests/test_datasets_*.py -q -ra
+
+test-real-data: ## Same checks on genuine raw files in $$GRIDSENSE_REAL_DATA_DIR
+	GRIDSENSE_REAL_DATA_DIR=$${GRIDSENSE_REAL_DATA_DIR:-data/raw/real-samples} \
+	$(PYTHON) -m pytest simulator/tests/test_datasets_real_files.py -v -ra
 
 test-ingestion: ## Ingestion tests (Kafka mocked)
 	cd ingestion && $(PYTHON) -m pytest tests -q -ra

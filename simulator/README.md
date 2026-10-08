@@ -23,6 +23,13 @@ before we plug in streaming, storage, dashboards, and ML on top of it.
 - Publishes each step's telemetry (bus voltages, line loading,
   generation, alerts) to the console and/or a local JSON Lines file.
 
+## Real data (Phase 7)
+
+The synthetic profiles in `profiles.py` remain the default for the
+telemetry simulator and for quick tests. Hosting-capacity QSTS can run on
+measured data instead: see `gridsense_sim/datasets/`, the `gridsense-data`
+command and [`docs/DATASETS.md`](../docs/DATASETS.md).
+
 ## Requirements
 
 - Python 3.10+
