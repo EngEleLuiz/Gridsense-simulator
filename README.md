@@ -22,7 +22,8 @@ account, managed service, or paid license is required at any phase.
 | 5 — Network migration | ✅ | `cigre_lv`, a 44-bus radial LV distribution feeder (CIGRE TF C6.04.02), alongside `case14/39/57/118`. |
 | 6 — Hosting-capacity methods | ✅ | Deterministic, stochastic and QSTS hosting capacity, compared in a dbt mart, served by the API and a dashboard. |
 | 6.1 — Methodology review & bugfixes | ✅ | Line-by-line review against the literature: 12 fixes that change published numbers, then a post-merge code review (R01–R22). See [below](#phase-61--methodology-review-and-bugfixes) and [`docs/CHANGES_phase6-bugfix.md`](docs/CHANGES_phase6-bugfix.md). |
-| **7 — Real data** | ✅ **current** | Six open, citable datasets (INMET, NASA POWER, PVGIS, Ausgrid, Low Carbon London, SimBench) with checksummed caching, measured timing checks and quality reports, turned into QSTS series with a provenance manifest. See [below](#phase-7--real-data) and [`docs/DATASETS.md`](docs/DATASETS.md). |
+| 7 — Real data | ✅ | Six open, citable datasets (INMET, NASA POWER, PVGIS, Ausgrid, Low Carbon London, SimBench) with checksummed caching, measured timing checks and quality reports, turned into QSTS series with a provenance manifest. See [below](#phase-7--real-data) and [`docs/DATASETS.md`](docs/DATASETS.md). |
+| **7.1 — Duration criteria** | ✅ **current** | PRODIST DRP/DRC and EN 50160 weekly criteria with PV attribution (closes C7); deterministic/stochastic take their operating point from the same series; London data (`uk_pv`). See [`docs/CHANGES_phase7.1-duration-criteria.md`](docs/CHANGES_phase7.1-duration-criteria.md). |
 | 8 — Certified surrogate + open dataset | 🔲 planned (prototype outside the repo) | Physics prior (LinDistFlow) + learned residual with conformal screening, as an accelerator inside the Phase 6 estimators. Renumbered from 7: its large speed-up needs the duration criterion τ̄ and benefits from real-data training. |
 | 9 — Streaming HC / operating envelope | 🔲 planned | Continuous envelope recomputation over the existing Kafka pipeline. |
 
@@ -235,12 +236,14 @@ python scripts/run_hosting_capacity_study.py --network cigre_lv \
 
 | Option | Meaning |
 |---|---|
-| `--framework` | `ansi_c84_range_a` (0.95–1.05) · `prodist_m8_bt` (0.92–1.05, verify the revision in force) · `en50160_envelope` (0.90–1.10, statistical). Default: per network (`cigre_lv` → EN 50160 envelope). |
+| `--framework` | `ansi_c84_range_a` (0.95–1.05) · `prodist_m8_bt` (0.92–1.05, verify the revision in force) · `en50160_envelope` (0.90–1.10; for overvoltage every 10-min mean must stay ≤ +10 %, the weekly 95 % allowance applies to the lower side only). Default: per network (`cigre_lv` → EN 50160 envelope). |
 | `--load-scale` | Load multiplier at the critical operating point for deterministic/stochastic (default 0.25, an assumption until Phase 8). `1.0` reproduces the old nominal-load numbers. |
 | `--mc-n-scenarios`, `--mc-alpha` | Stochastic HC = F⁻¹(α) of λ\*. A finite 95 % CI for p10 needs **n ≥ 36**; use ≥ 60. |
 | `--mc-adoption-min/max`, `--mc-size-dispersion` | Adoption model (assumptions — run a sensitivity analysis before citing). |
 | `--qsts-total-steps`, `--qsts-steps-per-day` | QSTS horizon (default 60 days at 5 min). Cost ≈ one power flow per step for the baseline gate plus about one per daylight step for the search. |
 | `--qsts-peak-load` | Rescale the synthetic load so its peak equals this multiplier (e.g. `1.0`). Required for long `cigre_lv` runs (R22); recorded in the payload. |
+| `--qsts-criterion` | `zero_tolerance` (default, legacy QSTS) · `prodist_m8_drp_drc` (DRP ≤ 3 %, DRC ≤ 0.5 % over weekly 10-min readings) · `en50160_weekly` · `prodist_m8_zero_tolerance`. Duration criteria run week by week with PV attribution; use a 10-min series. |
+| `--critical-point-from-series` | Deterministic/stochastic use the operating point taken from `--qsts-series` (max PV, min load); λ = installed capacity. |
 | `--qsts-series` | Run QSTS on a real-data series from `gridsense-data build-series` (Phase 7). The file is integrity-checked; its manifest SHA-256 is recorded with the result. Replaces the synthetic-profile options. |
 
 **Reading the results.** Compare only rows with `is_comparable = true`,
