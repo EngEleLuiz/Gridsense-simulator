@@ -72,7 +72,12 @@ from gridsense_sim.hosting_capacity import (
     find_hosting_capacity_deterministic,
     find_hosting_capacity_qsts,
 )
+from gridsense_sim.hosting_capacity.duration import DURATION_CRITERIA
 from gridsense_sim.hosting_capacity.qsts import DEFAULT_STEPS_PER_DAY, DEFAULT_TOTAL_STEPS
+from gridsense_sim.hosting_capacity.qsts_duration import find_hosting_capacity_duration, result_to_dict
+from gridsense_sim.hosting_capacity.study_design import RULES as CRITICAL_POINT_RULES
+from gridsense_sim.hosting_capacity.study_design import critical_point
+from gridsense_sim.hosting_capacity.timeseries import build_synthetic_series
 from gridsense_sim.provenance import collect_provenance
 
 logger = logging.getLogger("gridsense_sim.run_hosting_capacity_study")
@@ -175,7 +180,53 @@ def _run_stochastic(
     return out
 
 
+def _run_qsts_duration(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
+    """QSTS under a weekly duration criterion (PRODIST DRP/DRC, EN 50160): finding C7."""
+    kw = dict(kw)
+    criterion = kw.pop("criterion")
+    series = kw.pop("series", None)
+    if series is None:
+        series = build_synthetic_series(
+            kw.pop("total_steps"), kw.pop("steps_per_day"), kw.pop("profile_seed"),
+            peak_load_mult=kw.pop("peak_load_mult", None))
+    kw.pop("framework", None)  # the criterion carries its own voltage bands
+    r = find_hosting_capacity_duration(net, network, series, criterion, **kw)
+    d = result_to_dict(r)
+    critical_start = (d["windows"][[w["index"] for w in d["windows"]].index(r.critical_window)]["start_step"]
+                      if r.critical_window is not None else None)
+    return {
+        "lambda_max": _finite(r.lambda_max),
+        "lambda_fail": r.lambda_fail,
+        "bounded": r.bounded,
+        "resolved": r.resolved,
+        "total_pv_mw": r.total_pv_mw,
+        "pv_mw_per_bus": {str(k): v for k, v in r.pv_mw_per_bus.items()},
+        "binding_constraint": r.binding_constraint,
+        "conditions": asdict(r.conditions),
+        "criterion": r.criterion["name"],
+        "criterion_spec": r.criterion,
+        "first_violating_step": critical_start,
+        "critical_window": r.critical_window,
+        "windows": d["windows"],
+        "window_lambda_quantiles": r.window_lambda_quantiles,
+        "verification": r.verification,
+        "baseline_lower_compliant": r.baseline_lower_compliant,
+        "resolution_minutes": r.resolution_minutes,
+        "resolution_matches_criterion": r.resolution_matches_criterion,
+        "total_steps": r.total_steps,
+        "steps_per_day": r.steps_per_day,
+        "power_flows": r.power_flows,
+        "notes": r.notes,
+        "series_source": r.series_source,
+        "series_manifest_sha256": r.series_manifest_sha256,
+    }
+
+
 def _run_qsts(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
+    if kw.get("criterion", "zero_tolerance") != "zero_tolerance":
+        return _run_qsts_duration(net, network, kw)
+    kw = {k: v for k, v in kw.items()
+          if k not in ("criterion", "windows", "baseline_report")}
     r = find_hosting_capacity_qsts(net, network, **kw)
     series_fields = {
         "series_source": r.series_source,
@@ -214,6 +265,7 @@ def build_records(
     network_factory: Callable[[], pp.pandapowerNet] | None = None,
     qsts_series: Any = None,
     qsts_series_info: dict | None = None,
+    snapshot_info: dict | None = None,
 ) -> list[dict]:
     """Run the requested methods; one Bronze row per method.
 
@@ -225,11 +277,11 @@ def build_records(
     provenance = collect_provenance().to_dict()
     runners: dict[str, tuple[dict, Callable[[pp.pandapowerNet], dict]]] = {
         "deterministic": (
-            deterministic_kwargs,
+            {**deterministic_kwargs, **(snapshot_info or {})},
             lambda n: _run_deterministic(n, network_name, deterministic_kwargs),
         ),
         "stochastic": (
-            {**stochastic_kwargs, "alpha": stochastic_alpha},
+            {**stochastic_kwargs, "alpha": stochastic_alpha, **(snapshot_info or {})},
             lambda n: _run_stochastic(
                 n, network_name, stochastic_kwargs, stochastic_alpha, include_stochastic_scenarios
             ),
@@ -368,6 +420,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Real-data series (.parquet) from 'gridsense-data build-series'. Replaces the "
                         "synthetic profile; --qsts-total-steps/--qsts-steps-per-day/--qsts-peak-load "
                         "then do not apply.")
+    p.add_argument("--qsts-criterion", default="zero_tolerance",
+                   choices=["zero_tolerance", *sorted(DURATION_CRITERIA)],
+                   help="zero_tolerance: classic QSTS (first violating step). A duration criterion "
+                        "(PRODIST DRP/DRC, EN 50160 weekly) evaluates week by week with PV attribution.")
+    p.add_argument("--qsts-windows", type=int, nargs="+", default=None,
+                   help="Duration criteria only: compliance windows (weeks) to evaluate; default all.")
+    p.add_argument("--qsts-skip-night-baseline", action="store_true",
+                   help="Duration criteria only: skip night steps (no lower-side compliance report).")
+    p.add_argument("--critical-point-from-series", action="store_true",
+                   help="Deterministic/stochastic use the operating point taken from --qsts-series "
+                        "(max PV with min load) instead of --load-scale; lambda = installed capacity.")
+    p.add_argument("--critical-point-rule", default="min_load_high_pv", choices=CRITICAL_POINT_RULES)
+    p.add_argument("--critical-point-pv-fraction", type=float, default=0.9)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
@@ -390,6 +455,11 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         (args.qsts_peak_load is None or args.qsts_peak_load > 0, "--qsts-peak-load must be > 0"),
         (args.qsts_series is None or Path(args.qsts_series).is_file(),
          f"--qsts-series {args.qsts_series} does not exist"),
+        (not args.critical_point_from_series or args.qsts_series is not None,
+         "--critical-point-from-series needs --qsts-series"),
+        (0 < args.critical_point_pv_fraction <= 1, "--critical-point-pv-fraction must be in (0, 1]"),
+        (args.qsts_windows is None or args.qsts_criterion != "zero_tolerance",
+         "--qsts-windows only applies to a duration --qsts-criterion"),
         (args.qsts_series is None or args.qsts_peak_load is None,
          "--qsts-peak-load does not apply to --qsts-series (the series is already normalised; "
          "use 'gridsense-data build-series --peak-load')"),
@@ -425,15 +495,34 @@ def main(argv: list[str] | None = None) -> None:
         "steps_per_day": args.qsts_steps_per_day,
         "profile_seed": args.seed,
         "peak_load_mult": args.qsts_peak_load,
+        "criterion": args.qsts_criterion,
     }
+    duration_extras: dict[str, Any] = {}
+    if args.qsts_criterion != "zero_tolerance":
+        duration_extras = {"windows": args.qsts_windows,
+                           "baseline_report": not args.qsts_skip_night_baseline}
+        qsts_kwargs.update(duration_extras)
     qsts_series = None
+    snapshot_info: dict[str, Any] | None = None
+    det_scales: dict[str, Any] = {"load_scale": args.load_scale}
     qsts_series_info = None
-    if args.qsts_series and "qsts" in args.methods:
+    real = None
+    if args.qsts_series and ("qsts" in args.methods or args.critical_point_from_series):
         from gridsense_sim.datasets import load_series  # needs pyarrow (already required here)
 
         real = load_series(args.qsts_series)
+    if args.critical_point_from_series and real is not None:
+        cp = critical_point(real.series, args.critical_point_rule, args.critical_point_pv_fraction)
+        det_scales = {"load_scale": cp.load_mult, "pv_scale": cp.pv_mult}
+        snapshot_info = {"critical_point": cp.to_dict(),
+                         "critical_point_local_time": str(real.local_index[cp.step]),
+                         "series_path": str(args.qsts_series),
+                         "series_manifest_sha256": real.manifest_sha256}
+        logger.info("Snapshot operating point from series: step %d (%s), load %.3f, pv %.3f",
+                    cp.step, real.local_index[cp.step], cp.load_mult, cp.pv_mult)
+    if real is not None and "qsts" in args.methods:
         qsts_series = real.series
-        qsts_kwargs = dict(common)
+        qsts_kwargs = {**common, "criterion": args.qsts_criterion, **duration_extras}
         qsts_series_info = {
             "series_path": str(args.qsts_series),
             "series_manifest_sha256": real.manifest_sha256,
@@ -450,10 +539,10 @@ def main(argv: list[str] | None = None) -> None:
         methods=args.methods,
         run_id=str(uuid.uuid4()),
         run_timestamp=datetime.now(timezone.utc).isoformat(),
-        deterministic_kwargs={**common, "load_scale": args.load_scale},
+        deterministic_kwargs={**common, **det_scales},
         stochastic_kwargs={
             **common,
-            "load_scale": args.load_scale,
+            **det_scales,
             "n_scenarios": args.mc_n_scenarios,
             "seed": args.seed,
             "adoption_model": AdoptionModel(
@@ -466,6 +555,7 @@ def main(argv: list[str] | None = None) -> None:
         include_stochastic_scenarios=args.mc_include_scenarios,
         qsts_series=qsts_series,
         qsts_series_info=qsts_series_info,
+        snapshot_info=snapshot_info,
     )
     write_records_to_parquet(records, args.output_dir)
     failed = [r["method"] for r in records if json.loads(r["raw_value"])["status"] == "error"]
