@@ -190,8 +190,8 @@ def test_simbench_package_data_if_installed() -> None:
 
 
 # --------------------------------------------------------------- registry
-def test_registry_covers_six_documented_datasets() -> None:
-    assert set(DATASETS) == {"inmet", "nasa_power", "pvgis", "ausgrid", "lcl", "simbench"}
+def test_registry_covers_all_documented_datasets() -> None:
+    assert set(DATASETS) == {"inmet", "nasa_power", "pvgis", "ausgrid", "lcl", "simbench", "uk_pv"}
     for info in DATASETS.values():
         assert info.citation and info.license and info.homepage.startswith("https://")
 
