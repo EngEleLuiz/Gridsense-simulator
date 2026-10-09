@@ -166,6 +166,7 @@ def estimate_hosting_capacity(
     max_expansions: int = SEARCH_DEFAULTS.max_expansions,
     max_bisections: int = SEARCH_DEFAULTS.max_bisections,
     seed: int | None = 42,
+    pv_scale: float = 1.0,
 ) -> StochasticHCEstimate:
     """Monte Carlo over adoption scenarios; one bisection per scenario.
 
@@ -178,12 +179,18 @@ def estimate_hosting_capacity(
         max_expansions, max_bisections: Search controls per scenario
             (shared defaults, see ``search.SEARCH_DEFAULTS``).
         seed: RNG seed (numpy ``default_rng``).
+        pv_scale: PV output per unit of installed capacity at the studied
+            operating point (``pv_mult`` of a critical point taken from a
+            series). ``lambda`` then measures *installed* capacity, as in
+            QSTS; 1.0 keeps the classic snapshot meaning.
 
     Raises:
         BaselineInfeasibleError: violation at PV = 0.
     """
     if n_scenarios < 1:
         raise ValueError("n_scenarios must be >= 1.")
+    if not 0.0 < pv_scale <= 1.5:
+        raise ValueError("pv_scale must be in (0, 1.5].")
     model = adoption_model or AdoptionModel()
     limits = limits_for(network_name, framework)
     base_net = copy.deepcopy(net)
@@ -201,6 +208,8 @@ def estimate_hosting_capacity(
     results: list[ScenarioResult] = []
     for i in range(n_scenarios):
         frac, shape = model.sample(nominal, rng)
+        if pv_scale != 1.0:  # injection = lambda * pv_scale * installed shape
+            shape = PVAllocation({b: w * pv_scale for b, w in shape.base_mw_per_bus.items()})
         work = copy.deepcopy(base_net)
 
         def _violates(lam: float, _w: pp.pandapowerNet = work, _s: PVAllocation = shape) -> bool:
