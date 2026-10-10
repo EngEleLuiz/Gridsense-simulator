@@ -110,10 +110,23 @@ NETWORK_DEFAULT_FRAMEWORK: dict[str, str] = {
     "case57": "ansi_c84_range_a",
     "case118": "ansi_c84_range_a",
     "cigre_lv": "en50160_envelope",
+    # Phase 7.3 panel: German LV grids (European networks -> EN 50160 default)
+    "kerber_landnetz": "en50160_envelope",
+    "kerber_vorstadt": "en50160_envelope",
+    "simbench_lv_rural1": "en50160_envelope",
+    "simbench_lv_semiurb4": "en50160_envelope",
+    "simbench_lv_urban6": "en50160_envelope",
+    "lv_schutterwald": "en50160_envelope",
 }
 
 NETWORK_VOLTAGE_LEVELS_KV: dict[str, tuple[float, ...] | None] = {
     "cigre_lv": (0.4,),
+    "kerber_landnetz": (0.4,),
+    "kerber_vorstadt": (0.4,),
+    "simbench_lv_rural1": (0.4,),
+    "simbench_lv_semiurb4": (0.4,),
+    "simbench_lv_urban6": (0.4,),
+    "lv_schutterwald": (0.4,),
 }
 
 
