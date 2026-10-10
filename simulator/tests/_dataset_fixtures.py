@@ -188,3 +188,45 @@ def simbench_table(days: int = 400) -> pd.DataFrame:
         table[f"{name}_qload"] = 0.1
     table["PV1"] = interval_mean_cos_zenith(utc, pd.Timedelta("15min"), 51.0, 10.0)
     return table.iloc[: 366 * 96 - 4]  # roughly one calendar year, like the real file
+
+
+# ----------------------------------------------------------------- uk_pv
+LONDON = (51.5074, -0.1278)
+
+
+def write_uk_pv(root: Path, start: str = "2013-06-01", days: int = 8, product: str = "5_minutely",
+                step_min: int = 5) -> Path:
+    """metadata.csv + Hive partitions + bad_data.csv, as on the dataset card."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    root.mkdir(parents=True, exist_ok=True)
+    systems = [  # ss_id, lat, lon, kWp, kind
+        (101, 51.51, -0.12, 3.0, "ok"), (102, 51.50, -0.15, 4.0, "ok"), (103, 51.53, -0.10, 2.5, "ok"),
+        (104, 51.49, -0.13, 3.5, "night"), (105, 53.48, -2.24, 3.0, "far"), (106, 51.52, -0.14, 2.0, "ok"),
+    ]
+    pd.DataFrame([{"ss_id": s, "start_datetime_GMT": "2010-01-01 00:00:00", "end_datetime_GMT": "2025-01-01",
+                   "latitude_rounded": la, "longitude_rounded": lo, "orientation": 180, "tilt": 30, "kWp": k}
+                  for s, la, lo, k, _ in systems]).to_csv(root / "metadata.csv", index=False)
+    step = pd.Timedelta(minutes=step_min)
+    starts = pd.date_range(start, periods=days * 24 * 60 // step_min, freq=step, tz="UTC")
+    mu = interval_mean_cos_zenith(starts, step, *LONDON)
+    rows = []
+    for s, _, _, k, kind in systems:
+        p_kw = 0.8 * k * mu
+        if kind == "night":
+            p_kw = p_kw + 0.3 * k * (mu <= 0)
+        wh = p_kw * 1000 * step_min / 60
+        ends = starts + step  # period-ending stamps
+        for e, v in zip(ends, wh):
+            rows.append((s, e.tz_localize(None), float(v)))
+    df = pd.DataFrame(rows, columns=["ss_id", "datetime_GMT", "generation_Wh"])
+    df.loc[(df.ss_id == 101) & (df.index % 997 == 0), "generation_Wh"] = -5.0  # a few negative readings
+    for (y, m), part in df.groupby([df.datetime_GMT.dt.year, df.datetime_GMT.dt.month]):
+        d = root / product / f"year={y}" / f"month={m}"
+        d.mkdir(parents=True, exist_ok=True)
+        pq.write_table(pa.Table.from_pandas(part.reset_index(drop=True)), d / "data.parquet")
+    pd.DataFrame([{"ss_id": 103, "start_datetime_GMT": f"{start} 00:00:00",
+                   "end_datetime_GMT": (pd.Timestamp(start) + pd.Timedelta("1D")).strftime("%Y-%m-%d %H:%M:%S"),
+                   "reason": "test"}]).to_csv(root / "bad_data.csv", index=False)
+    return root

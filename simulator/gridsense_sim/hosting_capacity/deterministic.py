@@ -73,6 +73,7 @@ def find_hosting_capacity(
     tolerance: float = SEARCH_DEFAULTS.tolerance,
     max_expansions: int = SEARCH_DEFAULTS.max_expansions,
     max_bisections: int = SEARCH_DEFAULTS.max_bisections,
+    pv_scale: float = 1.0,
 ) -> DeterministicHCResult:
     """Deterministic HC by monotone bisection on ``lambda_``.
 
@@ -83,6 +84,9 @@ def find_hosting_capacity(
             :func:`proportional_to_load` on the *nominal* net.
         framework: Voltage framework key; ``None`` = network default.
         load_scale: Load multiplier for the critical operating point.
+        pv_scale: PV output per unit of installed capacity at that point
+            (from :func:`.study_design.critical_point`); ``lambda`` and the
+            reported MW are then *installed* capacity, as in QSTS.
             Pass ``1.0`` to reproduce the old nominal-load number.
         tolerance, max_expansions, max_bisections: Search controls.
 
@@ -94,6 +98,13 @@ def find_hosting_capacity(
     work = copy.deepcopy(net)
     allocation = allocation or proportional_to_load(work)  # nominal basis
     allocation.require_non_empty()
+    if not 0.0 < pv_scale <= 1.5:
+        raise ValueError("pv_scale must be in (0, 1.5].")
+    installed = allocation
+    if pv_scale != 1.0:
+        # Search on injected power = lambda * pv_scale * installed basis, so
+        # lambda measures installed capacity (comparable with QSTS).
+        allocation = PVAllocation({b: w * pv_scale for b, w in installed.base_mw_per_bus.items()})
 
     apply_load_scale(work, load_scale)
     scope = voltage_scope_buses(work, limits)
@@ -126,7 +137,7 @@ def find_hosting_capacity(
     at_hc = check_violations(work, limits, scope)
     pf_count += 1
 
-    pv = allocation.mw_at(outcome.lambda_max)
+    pv = installed.mw_at(outcome.lambda_max)  # installed MW
     return DeterministicHCResult(
         network_name=network_name,
         lambda_max=outcome.lambda_max,

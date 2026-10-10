@@ -35,6 +35,7 @@ Nothing under `data/` is committed.
 | `pvgis` | PV output per kWp, tilted plane | Global (SARAH-3 / ERA5) | 1 h | REST API, no key | Free reuse with attribution (EU 2011/833) |
 | `ausgrid` | Load (GC + CL) and gross PV (GG) per home | 300 PV homes, Sydney, 2010-07 – 2013-06 | 30 min | Yearly CSV/ZIP; manual copy accepted | CC BY (Ausgrid) |
 | `lcl` | Load per home | 5,567 London homes, 2011-11 – 2014-02 | 30 min | Large ZIP, read in chunks | London Datastore open data **[VERIFY]** |
+| `uk_pv` | Metered rooftop PV per system (Sheffield Solar via Open Climate Fix) | 30,000+ GB systems, 2010–2025; ~1,300 at 5 min | 5 / 30 min | Gated Hugging Face dataset, local copy | CC-BY-4.0 |
 | `simbench` | Benchmark load and PV profiles | Representative German profiles, 2016 | 15 min | Bundled in the `simbench` pip package | ODbL (data) **[VERIFY]** |
 
 Citations (also in `gridsense-data info <key>`):
@@ -49,6 +50,17 @@ Citations (also in `gridsense-data info <key>`):
 
 Items marked **[VERIFY]** must be checked on the publisher's page before
 they are quoted in the dissertation.
+
+## Study site: London, 2013 (Phase 7.1)
+
+Load from `lcl` (London homes) and PV from `uk_pv` (London systems), same year and city: no season shift and no irradiance-to-PV model. Download the needed months of `uk_pv` after accepting its terms:
+
+```bash
+huggingface-cli download openclimatefix/uk_pv --repo-type dataset \
+    --include "metadata.csv" "bad_data.csv" "5_minutely/year=2013/*" --local-dir data/raw/uk_pv
+```
+
+`build_series` aligns load and PV in **physical time** when both are measured where the study is (`load_clock="auto"`); the wall-clock mapping is only used to transfer load from another time zone.
 
 ## Format quirks found in the real files
 

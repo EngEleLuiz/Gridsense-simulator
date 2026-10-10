@@ -191,3 +191,17 @@ def test_manifest_hash_is_reproducible_across_builds(tmp_path) -> None:
     assert a.manifest["arrays_sha256"] == b.manifest["arrays_sha256"]
     back = load_series(save_series(a, tmp_path / "rt"))
     assert back.manifest_sha256 == a.manifest_sha256
+
+
+def test_year_transfer_keeps_weekdays_aligned() -> None:
+    load = _load_set(SOUTH_LOAD_SITE, start="2023-01-01", days=400)
+    pv = _irr_set(start="2023-01-01", days=400)
+    # study dated 2024: the same month-day in the 2023 source falls on another weekday
+    real = build_series(load, pv, target=FLO, start="2024-02-07", days=7, steps_per_day=24)
+    w0 = pd.Timestamp(real.manifest["load"]["source_window_local"][0])
+    assert w0.weekday() == pd.Timestamp("2024-02-07").weekday()
+    assert abs((w0 - pd.Timestamp("2023-02-07")).days) <= 3
+    assert real.manifest["load"]["weekday_aligned"] is True
+    off = build_series(load, pv, target=FLO, start="2024-02-07", days=7, steps_per_day=24,
+                       align_weekday=False)
+    assert off.manifest["load"]["source_window_local"][0] == "2023-02-07"

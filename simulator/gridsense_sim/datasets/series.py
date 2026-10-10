@@ -57,6 +57,7 @@ PRESET_SITES: dict[str, Site] = {
     "porto_alegre": Site("Porto Alegre/RS", -30.0346, -51.2177, -3.0, "America/Sao_Paulo"),
     "natal": Site("Natal/RN", -5.7945, -35.2110, -3.0, "America/Fortaleza"),
     "brasilia": Site("Brasilia/DF", -15.7939, -47.8828, -3.0, "America/Sao_Paulo"),
+    "london": Site("London/UK", 51.5074, -0.1278, 0.0, "Europe/London"),
 }
 
 
@@ -148,9 +149,14 @@ def _season_shift(src: Site | None, target: Site, requested: int | None) -> int:
 
 def _pick_window(
     s: pd.Series, target_start: pd.Timestamp, days: int, shift_days: int,
-    source_start: str | None, label: str,
+    source_start: str | None, label: str, align_weekday: bool = False,
 ) -> pd.Timestamp:
-    """Start (naive local midnight) of a fully covered contiguous source window."""
+    """Start (naive local midnight) of a fully covered contiguous source window.
+
+    With ``align_weekday`` the start is moved by at most 3 days so that it
+    falls on the same weekday as ``target_start``: household load depends on
+    working days vs weekends, so a year transfer must keep weekdays aligned.
+    """
     first = s.first_valid_index()
     last = s.last_valid_index()
     if first is None:
@@ -169,6 +175,15 @@ def _pick_window(
             cand = want.replace(year=year)
         except ValueError:  # 29 Feb in a common year
             cand = pd.Timestamp(year=year, month=2, day=28)
+        if align_weekday:
+            delta = (target_start.weekday() - cand.weekday()) % 7
+            delta = delta - 7 if delta > 3 else delta  # nearest same weekday, |delta| <= 3
+            options = sorted({delta, delta + 7 if delta < 0 else delta - 7}, key=abs)
+            for d in options:
+                c = cand + pd.Timedelta(days=d)
+                if c >= lo and c + length <= hi:
+                    return c
+            continue
         if cand >= lo and cand + length <= hi:
             return cand
     raise DatasetError(
@@ -285,6 +300,8 @@ def build_series(
     upsample: str = "hold",
     climatology_fill: bool = True,
     allow_quality_errors: bool = False,
+    load_clock: str = "auto",
+    align_weekday: bool = True,
 ) -> RealSeries:
     """Build a QSTS series on ``target``'s local standard clock.
 
@@ -301,6 +318,16 @@ def build_series(
         n_load_series: Random subset of homes (``seed``); ``None`` = all.
         upsample: ``"hold"`` (energy-exact) or ``"linear"`` when the study
             is finer than a source.
+        load_clock: ``"wall"`` maps the source's wall-clock time to the
+            study clock (load transferred from another place: people follow
+            the local clock); ``"physical"`` keeps real simultaneity with the
+            sun (load measured where the study is); ``"auto"`` (default)
+            chooses ``physical`` when the load source and the target share
+            a time zone, else ``wall``.
+        align_weekday: Keep the load window on the same weekdays as the
+            study dates (moves the source start by up to 3 days). Ignored
+            when ``load_source_start`` pins the window. PV is never moved:
+            weather has no weekday.
     """
     if days < 1:
         raise ValueError("days must be >= 1.")
@@ -322,9 +349,17 @@ def build_series(
     load_utc, load_cols = _aggregate_load(load, n_load_series, seed)
     load_res = _resample(load_utc, load.resolution, res, upsample)
     ls = load.site or target
-    load_local = _to_clock(load_res, res, ls.tz_name, ls.utc_offset_hours)
+    if load_clock not in ("auto", "wall", "physical"):
+        raise ValueError("load_clock must be 'auto', 'wall' or 'physical'.")
+    same_zone = bool(load.site and load.site.tz_name and load.site.tz_name == target.tz_name)
+    clock_mode = ("physical" if same_zone else "wall") if load_clock == "auto" else load_clock
+    if clock_mode == "physical":  # same place: keep real simultaneity with the sun
+        load_local = _to_clock(load_res, res, None, target.utc_offset_hours)
+    else:
+        load_local = _to_clock(load_res, res, ls.tz_name, ls.utc_offset_hours)
     l_shift = _season_shift(load.site, target, load_season_shift_days)
-    l0 = _pick_window(load_local, t0, days, l_shift, load_source_start, load.dataset)
+    l0 = _pick_window(load_local, t0, days, l_shift, load_source_start, load.dataset,
+                      align_weekday=align_weekday and load_source_start is None)
     l_win = load_local.loc[l0: l0 + pd.Timedelta(days=days) - res]
     l_filled = 0
     if climatology_fill:
@@ -391,7 +426,10 @@ def build_series(
             "series_ids_sha256": hashlib.sha256(",".join(load_cols).encode()).hexdigest(),
             "selection_seed": seed if n_load_series is not None else None,
             "normalize": normalize, "normalization_peak": peak, "peak_load_mult": peak_load_mult,
-            "clock": f"source wall clock ({ls.tz_name or 'fixed offset'})",
+            "clock": (f"physical time, standard UTC{target.utc_offset_hours:+g}" if clock_mode == "physical"
+                      else f"source wall clock ({ls.tz_name or 'fixed offset'})"),
+            "clock_mode": clock_mode,
+            "weekday_aligned": bool(l0.weekday() == t0.weekday()),
             "climatology_filled_steps": l_filled,
         }),
         "pv": _src(pv, p_shift, p0, {

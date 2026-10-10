@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from . import ausgrid, inmet, lcl, nasa_power, pvgis, simbench_profiles
+from . import ausgrid, inmet, lcl, nasa_power, pvgis, simbench_profiles, uk_pv
 from .base import DatasetInfo, ProfileSet
 from .cache import DataCache
 
@@ -21,6 +21,7 @@ _MODULES = {
     "ausgrid": ausgrid,
     "lcl": lcl,
     "simbench": simbench_profiles,
+    "uk_pv": uk_pv,
 }
 
 DATASETS: dict[str, DatasetInfo] = {k: m.INFO for k, m in _MODULES.items()}

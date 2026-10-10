@@ -13,14 +13,15 @@ pair of numbers, because the frameworks are not interchangeable:
     (202-231 V on a 220 V base). **Verify against the revision in force
     before citing** -- tracked in the dissertation reference checklist.
 ``en50160_envelope`` (0.90-1.10 pu)
-    EN 50160 +-10%. NOTE: in the standard this is a *statistical*
-    criterion (95% of 10-min mean values over one week). Applying it to
-    a single power-flow snapshot is a category error that the code
-    still permits (it is the historical default for ``cigre_lv``,
-    pending the advisor's decision) but flags via
-    :attr:`CriterionKind.STATISTICAL`, so every result carries the
-    caveat. It only becomes methodologically coherent inside a QSTS
-    duration criterion (tau_bar = 0.05), which is S1 work.
+    EN 50160 +-10%. The standard is weekly and statistical on the
+    *lower* side only: 95 % of the 10-min means within Un +-10 % and all
+    of them within Un +10 %/-15 %. On the *upper* side (the PV side)
+    every 10-min mean must stay at or below +10 %, so an instantaneous
+    +10 % check is the right test for overvoltage *if* the simulated
+    step represents a 10-min mean; it is too strict only for the lower
+    side. Flagged :attr:`CriterionKind.STATISTICAL` so every result
+    carries the caveat. The full weekly criterion is
+    ``en50160_weekly`` in :mod:`.duration` (Phase 7.1, finding C7).
 
 The per-network *default* framework below reproduces the behaviour of
 the original module exactly (no silent change of published numbers);
