@@ -72,3 +72,21 @@ def apply_load_scale(net: pp.pandapowerNet, scale: float) -> None:
         raise ValueError(f"load_scale must be > 0, got {scale}.")
     net.load["p_mw"] = net.load["p_mw"] * scale
     net.load["q_mvar"] = net.load["q_mvar"] * scale
+
+
+def apply_load_multipliers(net, multipliers) -> None:
+    """Scale each load by its own multiplier (the per-load state of one series step).
+
+    Used when the snapshot operating point is taken from a series with one
+    profile per load, so the snapshot sees exactly the load distribution
+    the QSTS sees at that step.
+    """
+    import numpy as np
+
+    m = np.asarray(multipliers, dtype=float)
+    if m.shape != (len(net.load),):
+        raise ValueError(f"load_multipliers must have one value per load ({len(net.load)}).")
+    if (m < 0).any():
+        raise ValueError("load_multipliers must be >= 0.")
+    net.load["p_mw"] = net.load["p_mw"].to_numpy() * m
+    net.load["q_mvar"] = net.load["q_mvar"].to_numpy() * m

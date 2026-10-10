@@ -46,7 +46,7 @@ import pandapower as pp
 
 from .allocation import PVAllocation, apply_allocation, proportional_to_load
 from .baseline import require_feasible_baseline
-from .conditions import DEFAULT_CRITICAL_LOAD_SCALE, StudyConditions, apply_load_scale
+from .conditions import DEFAULT_CRITICAL_LOAD_SCALE, StudyConditions, apply_load_multipliers, apply_load_scale
 from .limits import limits_for
 from .quantiles import QuantileEstimate, quantile_with_ci
 from .scope import voltage_scope_buses
@@ -167,6 +167,7 @@ def estimate_hosting_capacity(
     max_bisections: int = SEARCH_DEFAULTS.max_bisections,
     seed: int | None = 42,
     pv_scale: float = 1.0,
+    load_multipliers=None,
 ) -> StochasticHCEstimate:
     """Monte Carlo over adoption scenarios; one bisection per scenario.
 
@@ -197,6 +198,8 @@ def estimate_hosting_capacity(
     nominal = proportional_to_load(base_net)
     nominal.require_non_empty()
 
+    if load_multipliers is not None:  # per-load state of a series step (same data as QSTS)
+        apply_load_multipliers(base_net, load_multipliers)
     apply_load_scale(base_net, load_scale)
     scope = voltage_scope_buses(base_net, limits)
     conditions = StudyConditions.build(network_name, limits, load_scale, len(scope))
