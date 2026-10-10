@@ -72,4 +72,36 @@ def critical_point(ts: TimeSeries, rule: str = "min_load_high_pv", pv_fraction: 
     return CriticalPoint(t, ts.start_step + t, float(load[t]), float(pv[t]), rule, pv_fraction)
 
 
-__all__ = ["RULES", "CriticalPoint", "critical_point"]
+def block_average(ts: TimeSeries, block_minutes: int) -> TimeSeries:
+    """The same series seen at a coarser resolution, held at the original step.
+
+    Load and PV are averaged over consecutive blocks of ``block_minutes``
+    (energy-exact) and repeated within each block, so the step count and
+    the criterion's reading length stay the same and only the *variability
+    inside each block* is lost. Comparing a study on ``ts`` with one on
+    ``block_average(ts, 60)`` measures how much hourly data (e.g. INMET)
+    under- or over-states a 10-minute criterion (experiment E3).
+    """
+    step_min = 1440 / ts.steps_per_day
+    k = block_minutes / step_min
+    if k < 1 or abs(k - round(k)) > 1e-9:
+        raise ValueError(f"block_minutes must be a multiple of the series step ({step_min:g} min).")
+    k = round(k)
+    n = ts.n_steps - ts.n_steps % k
+    if n == 0:
+        raise ValueError("Series shorter than one block.")
+
+    def avg(x: np.ndarray) -> np.ndarray:
+        x = np.asarray(x, dtype=float)
+        out = x.copy()
+        out[:n] = np.repeat(x[:n].reshape(-1, k).mean(axis=1), k)
+        return out
+
+    return TimeSeries(
+        load_mult=avg(ts.load_mult), pv_mult=avg(ts.pv_mult), steps_per_day=ts.steps_per_day,
+        start_step=ts.start_step, source=f"{ts.source}|block{block_minutes}min",
+        manifest_sha256=ts.manifest_sha256,
+    )
+
+
+__all__ = ["RULES", "CriticalPoint", "block_average", "critical_point"]

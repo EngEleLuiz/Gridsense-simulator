@@ -76,7 +76,7 @@ from gridsense_sim.hosting_capacity.duration import DURATION_CRITERIA
 from gridsense_sim.hosting_capacity.qsts import DEFAULT_STEPS_PER_DAY, DEFAULT_TOTAL_STEPS
 from gridsense_sim.hosting_capacity.qsts_duration import find_hosting_capacity_duration, result_to_dict
 from gridsense_sim.hosting_capacity.study_design import RULES as CRITICAL_POINT_RULES
-from gridsense_sim.hosting_capacity.study_design import critical_point
+from gridsense_sim.hosting_capacity.study_design import block_average, critical_point
 from gridsense_sim.hosting_capacity.timeseries import build_synthetic_series
 from gridsense_sim.provenance import collect_provenance
 
@@ -431,6 +431,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--critical-point-from-series", action="store_true",
                    help="Deterministic/stochastic use the operating point taken from --qsts-series "
                         "(max PV with min load) instead of --load-scale; lambda = installed capacity.")
+    p.add_argument("--qsts-block-average", type=int, default=None, metavar="MIN",
+                   help="Experiment E3: average the series over blocks of MIN minutes (held at the "
+                        "original step) to measure the effect of coarser data on the criterion.")
     p.add_argument("--critical-point-rule", default="min_load_high_pv", choices=CRITICAL_POINT_RULES)
     p.add_argument("--critical-point-pv-fraction", type=float, default=0.9)
     p.add_argument("--seed", type=int, default=42)
@@ -458,6 +461,8 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         (not args.critical_point_from_series or args.qsts_series is not None,
          "--critical-point-from-series needs --qsts-series"),
         (0 < args.critical_point_pv_fraction <= 1, "--critical-point-pv-fraction must be in (0, 1]"),
+        (args.qsts_block_average is None or args.qsts_series is not None,
+         "--qsts-block-average needs --qsts-series"),
         (args.qsts_windows is None or args.qsts_criterion != "zero_tolerance",
          "--qsts-windows only applies to a duration --qsts-criterion"),
         (args.qsts_series is None or args.qsts_peak_load is None,
@@ -522,6 +527,8 @@ def main(argv: list[str] | None = None) -> None:
                     cp.step, real.local_index[cp.step], cp.load_mult, cp.pv_mult)
     if real is not None and "qsts" in args.methods:
         qsts_series = real.series
+        if args.qsts_block_average:
+            qsts_series = block_average(qsts_series, args.qsts_block_average)
         qsts_kwargs = {**common, "criterion": args.qsts_criterion, **duration_extras}
         qsts_series_info = {
             "series_path": str(args.qsts_series),
@@ -531,6 +538,7 @@ def main(argv: list[str] | None = None) -> None:
             "series_n_steps": real.series.n_steps,
             "series_start_local": real.manifest.get("start_local"),
             "series_site": real.manifest.get("target_site", {}).get("name"),
+            "series_block_average_min": args.qsts_block_average,
         }
         logger.info("QSTS on real series %s (%s, manifest %s)", args.qsts_series,
                     real.series.source, real.manifest_sha256[:12])

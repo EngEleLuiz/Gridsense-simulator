@@ -263,3 +263,20 @@ def test_runner_rejects_inconsistent_options(tmp_path) -> None:
     args = study.parse_args(["--network", "cigre_lv", "--qsts-series", str(path),
                              "--qsts-criterion", "en50160_weekly", "--qsts-windows", "0"])
     assert args.qsts_windows == [0]
+
+
+# --------------------------------------------------------- study design (7.2)
+def test_block_average_conserves_energy_and_removes_variability() -> None:
+    from gridsense_sim.hosting_capacity.study_design import block_average
+
+    h = np.arange(144) / 6
+    pv = np.clip(np.sin(np.pi * (h - 6) / 12), 0, None) * (1 + 0.3 * np.sin(np.arange(144)))
+    ts = TimeSeries(load_mult=0.5 + 0.1 * np.cos(h), pv_mult=np.clip(pv, 0, 1), steps_per_day=144)
+    hourly = block_average(ts, 60)
+    assert hourly.n_steps == ts.n_steps and hourly.steps_per_day == 144
+    assert hourly.pv_mult.sum() == pytest.approx(ts.pv_mult.sum())
+    assert hourly.pv_mult.max() <= ts.pv_mult.max() + 1e-12
+    assert np.allclose(hourly.pv_mult.reshape(-1, 6).std(axis=1), 0)
+    assert hourly.source.endswith("|block60min")
+    with pytest.raises(ValueError):
+        block_average(ts, 7)
