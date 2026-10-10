@@ -149,9 +149,14 @@ def _season_shift(src: Site | None, target: Site, requested: int | None) -> int:
 
 def _pick_window(
     s: pd.Series, target_start: pd.Timestamp, days: int, shift_days: int,
-    source_start: str | None, label: str,
+    source_start: str | None, label: str, align_weekday: bool = False,
 ) -> pd.Timestamp:
-    """Start (naive local midnight) of a fully covered contiguous source window."""
+    """Start (naive local midnight) of a fully covered contiguous source window.
+
+    With ``align_weekday`` the start is moved by at most 3 days so that it
+    falls on the same weekday as ``target_start``: household load depends on
+    working days vs weekends, so a year transfer must keep weekdays aligned.
+    """
     first = s.first_valid_index()
     last = s.last_valid_index()
     if first is None:
@@ -170,6 +175,15 @@ def _pick_window(
             cand = want.replace(year=year)
         except ValueError:  # 29 Feb in a common year
             cand = pd.Timestamp(year=year, month=2, day=28)
+        if align_weekday:
+            delta = (target_start.weekday() - cand.weekday()) % 7
+            delta = delta - 7 if delta > 3 else delta  # nearest same weekday, |delta| <= 3
+            options = sorted({delta, delta + 7 if delta < 0 else delta - 7}, key=abs)
+            for d in options:
+                c = cand + pd.Timedelta(days=d)
+                if c >= lo and c + length <= hi:
+                    return c
+            continue
         if cand >= lo and cand + length <= hi:
             return cand
     raise DatasetError(
@@ -287,6 +301,7 @@ def build_series(
     climatology_fill: bool = True,
     allow_quality_errors: bool = False,
     load_clock: str = "auto",
+    align_weekday: bool = True,
 ) -> RealSeries:
     """Build a QSTS series on ``target``'s local standard clock.
 
@@ -309,6 +324,10 @@ def build_series(
             sun (load measured where the study is); ``"auto"`` (default)
             chooses ``physical`` when the load source and the target share
             a time zone, else ``wall``.
+        align_weekday: Keep the load window on the same weekdays as the
+            study dates (moves the source start by up to 3 days). Ignored
+            when ``load_source_start`` pins the window. PV is never moved:
+            weather has no weekday.
     """
     if days < 1:
         raise ValueError("days must be >= 1.")
@@ -339,7 +358,8 @@ def build_series(
     else:
         load_local = _to_clock(load_res, res, ls.tz_name, ls.utc_offset_hours)
     l_shift = _season_shift(load.site, target, load_season_shift_days)
-    l0 = _pick_window(load_local, t0, days, l_shift, load_source_start, load.dataset)
+    l0 = _pick_window(load_local, t0, days, l_shift, load_source_start, load.dataset,
+                      align_weekday=align_weekday and load_source_start is None)
     l_win = load_local.loc[l0: l0 + pd.Timedelta(days=days) - res]
     l_filled = 0
     if climatology_fill:
@@ -409,6 +429,7 @@ def build_series(
             "clock": (f"physical time, standard UTC{target.utc_offset_hours:+g}" if clock_mode == "physical"
                       else f"source wall clock ({ls.tz_name or 'fixed offset'})"),
             "clock_mode": clock_mode,
+            "weekday_aligned": bool(l0.weekday() == t0.weekday()),
             "climatology_filled_steps": l_filled,
         }),
         "pv": _src(pv, p_shift, p0, {
