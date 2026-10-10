@@ -4,3 +4,9 @@ case39,0.95,1.05
 case57,0.95,1.05
 case118,0.95,1.05
 cigre_lv,0.90,1.10
+kerber_landnetz,0.90,1.10
+kerber_vorstadt,0.90,1.10
+lv_schutterwald,0.90,1.10
+simbench_lv_rural1,0.90,1.10
+simbench_lv_semiurb4,0.90,1.10
+simbench_lv_urban6,0.90,1.10

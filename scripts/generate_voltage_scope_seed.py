@@ -21,29 +21,38 @@ import csv
 import io
 from pathlib import Path
 
-import pandapower.networks as pn
 
 from gridsense_sim.hosting_capacity import limits_for, voltage_scope_buses
 from gridsense_sim.hosting_capacity.limits import NETWORK_DEFAULT_FRAMEWORK
+from gridsense_sim.networks import NETWORKS, make_network
 
 SEED_PATH = Path(__file__).resolve().parents[1] / "transform" / "seeds" / "network_voltage_scope.csv"
 
-NETWORK_FACTORIES = {
-    "case14": pn.case14,
-    "case39": pn.case39,
-    "case57": pn.case57,
-    "case118": pn.case118,
-    "cigre_lv": pn.create_cigre_network_lv,
-}
+# Single source of truth: gridsense_sim.networks (Phase 7.3). Built with the
+# default existing-PV policy; PV does not change which buses are LV loads.
+NETWORK_FACTORIES = {key: (lambda k=key: make_network(k)) for key in NETWORKS}
 
 
-def scope_rows() -> list[tuple[str, int]]:
-    """``(network, bus_id)`` for every voltage-checked bus, sorted."""
+def available_networks() -> list[str]:
+    """Registered networks whose optional dependencies are installed."""
+    import importlib.util
+
+    return sorted(k for k, v in NETWORKS.items()
+                  if k in NETWORK_DEFAULT_FRAMEWORK
+                  and (v.requires is None or importlib.util.find_spec(v.requires) is not None))
+
+
+def scope_rows(networks: list[str] | None = None) -> list[tuple[str, int]]:
+    """``(network, bus_id)`` for every voltage-checked bus, sorted.
+
+    ``networks=None`` means all registered networks (the committed seed is
+    generated that way, with the optional 'data' extra installed).
+    """
     missing = set(NETWORK_DEFAULT_FRAMEWORK) - set(NETWORK_FACTORIES)
     if missing:
         raise RuntimeError(f"No network factory for {sorted(missing)}; add it to NETWORK_FACTORIES.")
     rows: list[tuple[str, int]] = []
-    for name in sorted(NETWORK_DEFAULT_FRAMEWORK):
+    for name in sorted(networks if networks is not None else NETWORK_DEFAULT_FRAMEWORK):
         net = NETWORK_FACTORIES[name]()
         rows.extend((name, bus) for bus in voltage_scope_buses(net, limits_for(name)))
     return rows

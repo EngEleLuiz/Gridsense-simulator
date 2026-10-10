@@ -26,6 +26,17 @@ The load year is held fixed (2013) and projected onto each PV year:
 
 Bank holidays are not aligned; that is a declared residual.
 
+## Network panel (Phase 7.3)
+
+| Network | Country | Kind |
+|---|---|---|
+| CIGRE LV | Europe | benchmark |
+| Kerber rural, suburban | Germany | reference |
+| SimBench rural 1, semi-urban 4, urban 6 | Germany | benchmark from real data |
+| Schutterwald | Germany | real grid |
+
+**E5, internal consistency.** The SimBench grids run with their own per-load profiles, so network and data come from one source and no transfer is needed. This complements the London case, which has a year transfer.
+
 ## Experiments
 
 | ID | Question | Factor varied | Held fixed |

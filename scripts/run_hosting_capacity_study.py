@@ -56,6 +56,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+import numpy as np
 import pandapower as pp
 import pandapower.networks as pn
 import pyarrow as pa
@@ -78,6 +79,7 @@ from gridsense_sim.hosting_capacity.qsts_duration import find_hosting_capacity_d
 from gridsense_sim.hosting_capacity.study_design import RULES as CRITICAL_POINT_RULES
 from gridsense_sim.hosting_capacity.study_design import block_average, critical_point
 from gridsense_sim.hosting_capacity.timeseries import build_synthetic_series
+from gridsense_sim.networks import EXISTING_PV_POLICIES, NETWORKS, make_network
 from gridsense_sim.provenance import collect_provenance
 
 logger = logging.getLogger("gridsense_sim.run_hosting_capacity_study")
@@ -95,12 +97,10 @@ HC_BRONZE_SCHEMA = pa.schema(
     ]
 )
 
+# Single registry (gridsense_sim.networks): transmission test cases and the
+# Phase 7.3 distribution panel. The existing-PV policy is applied in main().
 SUPPORTED_NETWORKS: dict[str, Callable[[], pp.pandapowerNet]] = {
-    "case14": pn.case14,
-    "case39": pn.case39,
-    "case57": pn.case57,
-    "case118": pn.case118,
-    "cigre_lv": pn.create_cigre_network_lv,
+    key: (lambda k=key: make_network(k)) for key in NETWORKS
 }
 
 
@@ -266,6 +266,7 @@ def build_records(
     qsts_series: Any = None,
     qsts_series_info: dict | None = None,
     snapshot_info: dict | None = None,
+    context_info: dict | None = None,
 ) -> list[dict]:
     """Run the requested methods; one Bronze row per method.
 
@@ -277,17 +278,18 @@ def build_records(
     provenance = collect_provenance().to_dict()
     runners: dict[str, tuple[dict, Callable[[pp.pandapowerNet], dict]]] = {
         "deterministic": (
-            {**deterministic_kwargs, **(snapshot_info or {})},
+            {**deterministic_kwargs, **(snapshot_info or {}), **(context_info or {})},
             lambda n: _run_deterministic(n, network_name, deterministic_kwargs),
         ),
         "stochastic": (
-            {**stochastic_kwargs, "alpha": stochastic_alpha, **(snapshot_info or {})},
+            {**stochastic_kwargs, "alpha": stochastic_alpha, **(snapshot_info or {}), **(context_info or {})},
             lambda n: _run_stochastic(
                 n, network_name, stochastic_kwargs, stochastic_alpha, include_stochastic_scenarios
             ),
         ),
         "qsts": (
-            {**qsts_kwargs, **(qsts_series_info or {})},
+            {**{k: v for k, v in qsts_kwargs.items() if k != "load_matrix"}, **(qsts_series_info or {}),
+             **(context_info or {})},
             lambda n: _run_qsts(
                 n, network_name,
                 {**qsts_kwargs, "series": qsts_series} if qsts_series is not None else qsts_kwargs,
@@ -401,6 +403,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--load-scale", type=float, default=DEFAULT_CRITICAL_LOAD_SCALE,
                    help="Load multiplier at the critical operating point "
                         "(deterministic/stochastic). 1.0 reproduces the old nominal-load number.")
+    p.add_argument("--existing-pv", default="remove", choices=EXISTING_PV_POLICIES,
+                   help="PV already installed in the network (SimBench grids): 'remove' = capacity "
+                        "on an empty network (default, comparable across networks); 'keep' = "
+                        "additional capacity on top of it.")
     p.add_argument("--output-dir", default="data/hosting_capacity")
     p.add_argument("--tolerance", type=float, default=0.01)
     p.add_argument("--mc-n-scenarios", type=int, default=60)
@@ -431,6 +437,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--critical-point-from-series", action="store_true",
                    help="Deterministic/stochastic use the operating point taken from --qsts-series "
                         "(max PV with min load) instead of --load-scale; lambda = installed capacity.")
+    p.add_argument("--qsts-network-profiles", action="store_true",
+                   help="SimBench grids only: QSTS on the grid's own load and PV profiles (one "
+                        "profile per load, 15 min, 2016) - no data transfer. Needs a duration "
+                        "--qsts-criterion (use prodist_m8_zero_tolerance for tau = 0).")
+    p.add_argument("--qsts-start", default="2016-06-01", help="With --qsts-network-profiles.")
+    p.add_argument("--qsts-days", type=int, default=28, help="With --qsts-network-profiles.")
     p.add_argument("--qsts-block-average", type=int, default=None, metavar="MIN",
                    help="Experiment E3: average the series over blocks of MIN minutes (held at the "
                         "original step) to measure the effect of coarser data on the criterion.")
@@ -458,10 +470,16 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         (args.qsts_peak_load is None or args.qsts_peak_load > 0, "--qsts-peak-load must be > 0"),
         (args.qsts_series is None or Path(args.qsts_series).is_file(),
          f"--qsts-series {args.qsts_series} does not exist"),
-        (not args.critical_point_from_series or args.qsts_series is not None,
-         "--critical-point-from-series needs --qsts-series"),
+        (not args.critical_point_from_series or args.qsts_series is not None or args.qsts_network_profiles,
+         "--critical-point-from-series needs --qsts-series or --qsts-network-profiles"),
         (0 < args.critical_point_pv_fraction <= 1, "--critical-point-pv-fraction must be in (0, 1]"),
-        (args.qsts_block_average is None or args.qsts_series is not None,
+        (not args.qsts_network_profiles or args.network.startswith("simbench_"),
+         "--qsts-network-profiles only applies to SimBench networks"),
+        (not args.qsts_network_profiles or args.qsts_criterion != "zero_tolerance",
+         "--qsts-network-profiles needs a duration --qsts-criterion (prodist_m8_zero_tolerance for tau = 0)"),
+        (not (args.qsts_network_profiles and args.qsts_series),
+         "use either --qsts-series or --qsts-network-profiles"),
+        (args.qsts_block_average is None or args.qsts_series is not None or args.qsts_network_profiles,
          "--qsts-block-average needs --qsts-series"),
         (args.qsts_windows is None or args.qsts_criterion != "zero_tolerance",
          "--qsts-windows only applies to a duration --qsts-criterion"),
@@ -516,6 +534,31 @@ def main(argv: list[str] | None = None) -> None:
         from gridsense_sim.datasets import load_series  # needs pyarrow (already required here)
 
         real = load_series(args.qsts_series)
+    if args.qsts_network_profiles:
+        from gridsense_sim.datasets.simbench_profiles import network_series
+
+        full_net = make_network(args.network, existing_pv="keep")  # PV sizes weight the PV profile
+        own_ts, own_matrix, own_info = network_series(full_net, args.qsts_start, args.qsts_days)
+        if args.qsts_block_average:
+            own_ts = block_average(own_ts, args.qsts_block_average)
+            k = args.qsts_block_average // 15  # SimBench step: 15 min
+            m = own_matrix.shape[0] - own_matrix.shape[0] % k
+            own_matrix = own_matrix.copy()
+            own_matrix[:m] = np.repeat(own_matrix[:m].reshape(-1, k, own_matrix.shape[1]).mean(axis=1), k, axis=0)
+        if "qsts" in args.methods:
+            qsts_series = own_ts
+            qsts_kwargs = {**common, "criterion": args.qsts_criterion, **duration_extras,
+                           "load_matrix": own_matrix}
+            qsts_series_info = {"series_source": own_ts.source, "network_profiles": own_info,
+                                "series_block_average_min": args.qsts_block_average}
+        if args.critical_point_from_series:
+            cp = critical_point(own_ts, args.critical_point_rule, args.critical_point_pv_fraction)
+            # Per-load state of the critical step: the snapshot sees exactly the load
+            # distribution the QSTS sees at that step (load_scale 1.0 on top of it).
+            det_scales = {"load_scale": 1.0, "pv_scale": cp.pv_mult,
+                          "load_multipliers": own_matrix[cp.step].tolist()}
+            snapshot_info = {"critical_point": cp.to_dict(), "network_profiles": own_info,
+                             "per_load_operating_point": True}
     if args.critical_point_from_series and real is not None:
         cp = critical_point(real.series, args.critical_point_rule, args.critical_point_pv_fraction)
         det_scales = {"load_scale": cp.load_mult, "pv_scale": cp.pv_mult}
@@ -542,8 +585,10 @@ def main(argv: list[str] | None = None) -> None:
         }
         logger.info("QSTS on real series %s (%s, manifest %s)", args.qsts_series,
                     real.series.source, real.manifest_sha256[:12])
+    network_factory = lambda: make_network(args.network, args.existing_pv)  # noqa: E731
     records = build_records(
         network_name=args.network,
+        network_factory=network_factory,
         methods=args.methods,
         run_id=str(uuid.uuid4()),
         run_timestamp=datetime.now(timezone.utc).isoformat(),
@@ -564,6 +609,9 @@ def main(argv: list[str] | None = None) -> None:
         qsts_series=qsts_series,
         qsts_series_info=qsts_series_info,
         snapshot_info=snapshot_info,
+        context_info={"existing_pv": args.existing_pv,
+                      "network_kind": NETWORKS[args.network].kind,
+                      "network_country": NETWORKS[args.network].country},
     )
     write_records_to_parquet(records, args.output_dir)
     failed = [r["method"] for r in records if json.loads(r["raw_value"])["status"] == "error"]
