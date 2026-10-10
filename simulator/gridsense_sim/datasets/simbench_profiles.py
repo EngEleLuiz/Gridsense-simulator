@@ -128,4 +128,59 @@ def load(
     return ps
 
 
-__all__ = ["DEFAULT_LOAD_PROFILES", "INFO", "SITE", "from_profiles_table", "load"]
+def network_series(net, start: str = "2016-06-01", days: int = 28, scenario: int = 0):
+    """A SimBench grid with *its own* profiles: no data transfer at all.
+
+    Every load gets the relative profile SimBench assigns to it
+    (``net.load.profile``, e.g. ``H0-A``, ``G1-A``) as a per-load
+    multiplier matrix; PV is the capacity-weighted mean of the profiles of
+    the PV units the grid ships with (all PV profiles if it has none).
+    15-minute steps on the CET/CEST clock of the dataset, from ``start``.
+
+    Returns ``(TimeSeries, load_matrix, info)``. Pass ``net`` *before*
+    removing its PV units (their sizes weight the PV profile).
+    """
+    import numpy as np
+
+    from ..hosting_capacity.timeseries import TimeSeries
+
+    if "profile" not in net.load or not hasattr(net, "profiles") or "load" not in net.profiles:
+        raise DatasetError("network_series needs a SimBench net (net.profiles and net.load.profile).")
+    lp = net.profiles["load"]
+    times = pd.to_datetime(lp["time"], format="%d.%m.%Y %H:%M")
+    t0 = pd.Timestamp(start)
+    first = np.flatnonzero(times.to_numpy() == np.datetime64(t0))
+    if not len(first):
+        raise DatasetError(f"SimBench profiles have no step at {start} (2016, 15 min).")
+    i0 = int(first[0])
+    n = days * 96
+    if i0 + n > len(lp):
+        raise DatasetError(f"{days} days from {start} run past the end of the SimBench year.")
+    cols = [f"{p}_pload" for p in net.load["profile"]]
+    missing = sorted({c for c in cols if c not in lp})
+    if missing:
+        raise DatasetError(f"SimBench load profiles missing: {missing[:5]}")
+    matrix = lp[cols].iloc[i0:i0 + n].to_numpy(dtype=float)
+    ren = net.profiles["renewables"]
+    pv_units = net.sgen[net.sgen["type"].astype(str).str.upper().str.contains("PV")] if len(net.sgen) else net.sgen
+    if len(pv_units) and "profile" in pv_units:
+        w = pv_units.groupby("profile")["p_mw"].sum()
+        w = w[[c for c in w.index if c in ren]]
+        pv = (ren[w.index].iloc[i0:i0 + n].to_numpy(dtype=float) @ (w / w.sum()).to_numpy())
+        pv_source = {"weights_by_profile": {k: float(v) for k, v in (w / w.sum()).items()}}
+    else:
+        pv_cols = [c for c in ren.columns if c.startswith("PV")]
+        pv = ren[pv_cols].iloc[i0:i0 + n].to_numpy(dtype=float).mean(axis=1)
+        pv_source = {"mean_of": pv_cols}
+    pv = np.clip(pv, 0.0, 1.0)
+    pv[pv < 1e-4] = 0.0
+    base = net.load["p_mw"].to_numpy(dtype=float)
+    agg = (matrix * base).sum(axis=1) / base.sum()
+    ts = TimeSeries(load_mult=np.maximum(agg, 1e-6), pv_mult=pv, steps_per_day=96, start_step=0,
+                    source=f"simbench_own_profiles:{start}+{days}d")
+    info = {"start": start, "days": days, "steps_per_day": 96, "clock": "CET/CEST (SimBench time axis)",
+            "load_profiles": sorted(set(net.load["profile"])), "pv": pv_source, "scenario": scenario}
+    return ts, matrix, info
+
+
+__all__ = ["DEFAULT_LOAD_PROFILES", "INFO", "SITE", "from_profiles_table", "load", "network_series"]
