@@ -10,3 +10,5 @@ lv_schutterwald,0.90,1.10
 simbench_lv_rural1,0.90,1.10
 simbench_lv_semiurb4,0.90,1.10
 simbench_lv_urban6,0.90,1.10
+ieee_european_lv_offpeak,0.90,1.10
+ieee_european_lv_onpeak,0.90,1.10

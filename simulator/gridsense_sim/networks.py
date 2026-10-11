@@ -17,7 +17,13 @@ key                         country   what
 ``simbench_lv_semiurb4``    Germany   SimBench LV semi-urban 4
 ``simbench_lv_urban6``      Germany   SimBench LV urban 6
 ``lv_schutterwald``         Germany   Real LV grid of Schutterwald, 14 feeders
+``ieee_european_lv_offpeak`` UK       IEEE European LV test feeder, off-peak
+``ieee_european_lv_onpeak``  UK       IEEE European LV test feeder, on-peak
 ==========================  ========  =========================================
+
+The IEEE European LV feeder has 55 *single-phase* customers
+(``asymmetric_load``): it runs through the three-phase path
+(:mod:`.hosting_capacity.unbalanced`, Phase 7.4).
 
 SimBench grids ship with PV already installed. ``existing_pv`` decides
 what a hosting-capacity study means for them:
@@ -71,6 +77,9 @@ _KERBER_CITE = ("Kerber, G. (2011). Aufnahmefaehigkeit von Niederspannungsvertei
                 "Einspeisung aus Photovoltaikkleinanlagen. Dissertation, TU Muenchen; as implemented "
                 "in pandapower")
 
+_IEEE_EU_CITE = ("IEEE PES Distribution System Analysis Subcommittee, European Low Voltage Test "
+                 "Feeder (2015); as implemented in pandapower")
+
 NETWORKS: dict[str, NetworkInfo] = {
     "case14": NetworkInfo("case14", pn.case14, "US", "transmission_test", "IEEE 14-bus", "IEEE", hc_panel=False),
     "case39": NetworkInfo("case39", pn.case39, "US", "transmission_test", "IEEE 39-bus", "IEEE", hc_panel=False),
@@ -102,6 +111,13 @@ NETWORKS: dict[str, NetworkInfo] = {
         "Real LV grid of Schutterwald (Baden-Wuerttemberg): 14 MV/LV substations, 1,506 loads",
         "pandapower network 'lv_schutterwald' (Thurner et al. 2018, pandapower: IEEE TPWRS 33(6)); "
         "original grid data from the municipality's utility [VERIFY source]"),
+    "ieee_european_lv_offpeak": NetworkInfo(
+        "ieee_european_lv_offpeak", lambda: pn.ieee_european_lv_asymmetric("off_peak_1440"), "UK", "benchmark",
+        "IEEE European LV test feeder (906 LV buses, 55 single-phase customers), off-peak snapshot",
+        _IEEE_EU_CITE),
+    "ieee_european_lv_onpeak": NetworkInfo(
+        "ieee_european_lv_onpeak", lambda: pn.ieee_european_lv_asymmetric("on_peak_566"), "UK", "benchmark",
+        "IEEE European LV test feeder, on-peak snapshot (minute 566)", _IEEE_EU_CITE),
 }
 
 
