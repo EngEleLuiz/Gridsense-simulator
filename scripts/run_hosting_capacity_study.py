@@ -79,6 +79,12 @@ from gridsense_sim.hosting_capacity.qsts_duration import find_hosting_capacity_d
 from gridsense_sim.hosting_capacity.study_design import RULES as CRITICAL_POINT_RULES
 from gridsense_sim.hosting_capacity.study_design import block_average, critical_point
 from gridsense_sim.hosting_capacity.timeseries import build_synthetic_series
+from gridsense_sim.hosting_capacity.unbalanced import (
+    PHASE_MODELS,
+    estimate_hosting_capacity_unbalanced_stochastic,
+    find_hosting_capacity_unbalanced,
+    is_unbalanced_network,
+)
 from gridsense_sim.networks import EXISTING_PV_POLICIES, NETWORKS, make_network
 from gridsense_sim.provenance import collect_provenance
 
@@ -124,6 +130,10 @@ def _envelope(method: str, network: str, params: dict[str, Any], provenance: dic
 
 
 def _run_deterministic(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
+    if is_unbalanced_network(net):  # Phase 7.4: single-phase customers -> three-phase path
+        ukw = {k: v for k, v in kw.items() if k not in ("pv_scale", "load_multipliers", "pv_power_factor")}
+        return _run_unbalanced_deterministic(net, network, ukw)
+    kw = {k: v for k, v in kw.items() if k not in ("phase_model", "source_vm_pu")}
     r = find_hosting_capacity_deterministic(net, network, **kw)
     return {
         "lambda_max": r.lambda_max,
@@ -142,6 +152,13 @@ def _run_deterministic(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
 def _run_stochastic(
     net: pp.pandapowerNet, network: str, kw: dict, alpha: float, include_scenarios: bool
 ) -> dict:
+    if is_unbalanced_network(net):
+        ukw = dict(kw)
+        out = _run_unbalanced_stochastic(net, network, {**ukw, "alpha": alpha})
+        if not include_scenarios:
+            out.pop("critical_lambdas", None)
+        return out
+    kw = {k: v for k, v in kw.items() if k not in ("phase_model", "source_vm_pu")}
     est = estimate_hosting_capacity_stochastic(net, network, **kw)
     q = est.hc_lambda(alpha)
     p50 = est.hc_lambda(0.5)
@@ -180,6 +197,50 @@ def _run_stochastic(
     return out
 
 
+def _json_safe(obj: Any) -> Any:
+    """Replace inf/NaN with None recursively: PostgreSQL JSONB rejects Infinity and NaN."""
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
+def _run_unbalanced_deterministic(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
+    """Phase 7.4: three-phase deterministic (single-phase customers)."""
+    r = find_hosting_capacity_unbalanced(net, network, **kw)
+    return _json_safe({
+        "lambda_max": r.lambda_max, "lambda_fail": r.lambda_fail, "bounded": r.bounded,
+        "resolved": r.resolved, "total_pv_mw": r.total_pv_mw if r.bounded else None,
+        "binding_constraint": r.binding_constraint, "conditions": asdict(r.conditions),
+        "phase_model": r.phase_model, "lambda_unit": r.lambda_unit, "n_customers": r.n_customers,
+        "pv_mw_per_phase": r.pv_mw_per_phase, "max_vuf_percent": r.max_vuf_percent,
+        "vmin_pu": r.vmin_pu, "vmax_pu": r.vmax_pu, "source_vm_pu": r.source_vm_pu,
+        "power_flows": r.power_flows, "notes": r.notes,
+    })
+
+
+def _run_unbalanced_stochastic(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
+    """Phase 7.4: three-phase stochastic (random single-phase adopters)."""
+    kw = dict(kw)
+    model = kw.pop("adoption_model", None)
+    if model is not None:
+        kw["adoption_fraction"] = tuple(model.adoption_fraction)
+    for k in ("pv_scale", "load_multipliers"):
+        kw.pop(k, None)
+    r = estimate_hosting_capacity_unbalanced_stochastic(net, network, **kw)
+    return _json_safe({
+        "lambda_max": _finite(r.hc_lambda), "lambda_fail": None, "bounded": r.hc_lambda is not None,
+        "resolved": True, "total_pv_mw": r.hc_mw, "binding_constraint": None,
+        "conditions": asdict(r.conditions), "alpha": r.alpha,
+        "hc_lambda_ci_low": _finite(r.hc_lambda_ci_low), "hc_lambda_ci_high": _finite(r.hc_lambda_ci_high),
+        "phase_model": r.phase_model, "lambda_unit": r.lambda_unit, "n_scenarios": r.n_scenarios,
+        "critical_lambdas": r.critical_lambdas, "source_vm_pu": r.source_vm_pu, "power_flows": r.power_flows,
+    })
+
+
 def _run_qsts_duration(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
     """QSTS under a weekly duration criterion (PRODIST DRP/DRC, EN 50160): finding C7."""
     kw = dict(kw)
@@ -194,7 +255,7 @@ def _run_qsts_duration(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
     d = result_to_dict(r)
     critical_start = (d["windows"][[w["index"] for w in d["windows"]].index(r.critical_window)]["start_step"]
                       if r.critical_window is not None else None)
-    return {
+    return _json_safe({
         "lambda_max": _finite(r.lambda_max),
         "lambda_fail": r.lambda_fail,
         "bounded": r.bounded,
@@ -219,7 +280,7 @@ def _run_qsts_duration(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
         "notes": r.notes,
         "series_source": r.series_source,
         "series_manifest_sha256": r.series_manifest_sha256,
-    }
+    })
 
 
 def _run_qsts(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
@@ -400,9 +461,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--methods", nargs="+", default=list(METHODS), choices=METHODS)
     p.add_argument("--framework", default=None, choices=sorted(FRAMEWORKS),
                    help="Voltage framework; default = network default (see limits.py).")
-    p.add_argument("--load-scale", type=float, default=DEFAULT_CRITICAL_LOAD_SCALE,
-                   help="Load multiplier at the critical operating point "
-                        "(deterministic/stochastic). 1.0 reproduces the old nominal-load number.")
+    p.add_argument("--load-scale", type=float, default=None,
+                   help="Load multiplier at the critical operating point (deterministic/stochastic). "
+                        f"Default {DEFAULT_CRITICAL_LOAD_SCALE} for balanced networks; 1.0 (the snapshot "
+                        "as is) for three-phase networks such as the IEEE European LV feeder.")
+    p.add_argument("--phase-model", default="unbalanced", choices=PHASE_MODELS,
+                   help="Networks with single-phase customers (IEEE European LV): 'unbalanced' keeps each "
+                        "customer on its phase; 'balanced_equivalent' splits load and PV evenly (same solver).")
+    p.add_argument("--source-vm-pu", type=float, default=None,
+                   help="Override the source voltage of three-phase networks (IEEE European LV is "
+                        "specified at 1.05 pu).")
     p.add_argument("--existing-pv", default="remove", choices=EXISTING_PV_POLICIES,
                    help="PV already installed in the network (SimBench grids): 'remove' = capacity "
                         "on an empty network (default, comparable across networks); 'keep' = "
@@ -458,7 +526,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     """Reject invalid arguments before any power flow runs (finding R09)."""
     checks = [
-        (args.load_scale > 0, "--load-scale must be > 0"),
+        (args.load_scale is None or args.load_scale > 0, "--load-scale must be > 0"),
         (args.tolerance > 0, "--tolerance must be > 0"),
         (0 < args.mc_alpha < 1, "--mc-alpha must be in (0, 1)"),
         (args.mc_n_scenarios >= 1, "--mc-n-scenarios must be >= 1"),
@@ -527,7 +595,15 @@ def main(argv: list[str] | None = None) -> None:
         qsts_kwargs.update(duration_extras)
     qsts_series = None
     snapshot_info: dict[str, Any] | None = None
+    three_phase = is_unbalanced_network(NETWORKS[args.network].factory())
+    if three_phase and "qsts" in args.methods:
+        raise SystemExit("QSTS is not implemented for three-phase networks yet (Phase 7.4 covers "
+                         "deterministic and stochastic).")
+    if args.load_scale is None:
+        args.load_scale = 1.0 if three_phase else DEFAULT_CRITICAL_LOAD_SCALE
     det_scales: dict[str, Any] = {"load_scale": args.load_scale}
+    if three_phase:
+        det_scales.update({"phase_model": args.phase_model, "source_vm_pu": args.source_vm_pu})
     qsts_series_info = None
     real = None
     if args.qsts_series and ("qsts" in args.methods or args.critical_point_from_series):

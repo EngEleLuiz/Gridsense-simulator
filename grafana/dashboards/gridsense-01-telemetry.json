@@ -1,0 +1,325 @@
+{
+  "uid": "gridsense-01-telemetry",
+  "title": "GridSense 1 - Grid telemetry",
+  "tags": [
+    "gridsense",
+    "telemetry"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "network",
+        "type": "query",
+        "datasource": {
+          "type": "postgres",
+          "uid": "gridsense-timescaledb"
+        },
+        "query": "SELECT DISTINCT network FROM public_gold.mart_grid_kpis_daily ORDER BY 1",
+        "definition": "SELECT DISTINCT network FROM public_gold.mart_grid_kpis_daily ORDER BY 1",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Peak load",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "MW",
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT max(peak_load_mw) AS peak_load_mw FROM public_gold.mart_grid_kpis_daily WHERE network = '$network'"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Mean load factor",
+      "type": "stat",
+      "description": "Average over days of (mean load / peak load). 1.0 = flat load.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT round(avg(load_factor)::numeric, 3) AS load_factor FROM public_gold.mart_grid_kpis_daily WHERE network = '$network'"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Steps with an active contingency",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT sum(n_contingency_steps) AS contingency_steps FROM public_gold.mart_grid_kpis_daily WHERE network = '$network'"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Simulated steps",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT sum(n_steps) AS steps FROM public_gold.mart_grid_kpis_daily WHERE network = '$network'"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Daily load and generation",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "MW"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT day_bucket AS time, avg_load_mw, peak_load_mw, min_load_mw, avg_generation_mw FROM public_gold.mart_grid_kpis_daily WHERE network = '$network' AND $__timeFilter(day_bucket) ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Line loading (hourly)",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 14,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT hour_bucket AS time, max(max_loading_percent) AS max_loading_percent, avg(avg_loading_percent) AS mean_loading_percent FROM public_gold.mart_line_loading_hourly WHERE network = '$network' AND $__timeFilter(hour_bucket) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Most loaded lines",
+      "type": "table",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 12,
+        "w": 10,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT line_id, round(max(max_loading_percent)::numeric, 1) AS max_loading_percent, sum(n_overload_events) AS overload_events, round(100.0 * sum(n_overload_events) / nullif(sum(n_readings), 0), 2) AS overload_rate_pct FROM public_gold.mart_line_loading_hourly WHERE network = '$network' GROUP BY line_id ORDER BY 2 DESC LIMIT 15"
+        }
+      ]
+    }
+  ]
+}

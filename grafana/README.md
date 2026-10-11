@@ -49,12 +49,17 @@ grafana/
 │   └── dashboards/
 │       └── dashboards.yml    # Points Grafana at dashboards/ below
 └── dashboards/
-    └── gridsense-overview.json
+    ├── gridsense-01-telemetry.json
+    ├── gridsense-02-voltage.json
+    ├── gridsense-03-hc-methods.json
+    ├── gridsense-04-hc-duration.json
+    └── gridsense-05-network-panel.json
 ```
 
 ## Adding your own panels
 
-Edit `dashboards/gridsense-overview.json` directly, or build a panel
+Dashboards are generated: edit the SQL in `scripts/build_grafana_dashboards.py` and run
+`python scripts/build_grafana_dashboards.py` (do not hand-edit the JSON). Or build a panel
 in the Grafana UI and use "Export > Save JSON to file" to add a new
 dashboard file here — anything dropped into `grafana/dashboards/` is
 picked up automatically (polled every 30s per `dashboards.yml`).

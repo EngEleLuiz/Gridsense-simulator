@@ -117,6 +117,8 @@ NETWORK_DEFAULT_FRAMEWORK: dict[str, str] = {
     "simbench_lv_semiurb4": "en50160_envelope",
     "simbench_lv_urban6": "en50160_envelope",
     "lv_schutterwald": "en50160_envelope",
+    "ieee_european_lv_offpeak": "en50160_envelope",
+    "ieee_european_lv_onpeak": "en50160_envelope",
 }
 
 NETWORK_VOLTAGE_LEVELS_KV: dict[str, tuple[float, ...] | None] = {
@@ -127,6 +129,8 @@ NETWORK_VOLTAGE_LEVELS_KV: dict[str, tuple[float, ...] | None] = {
     "simbench_lv_semiurb4": (0.4,),
     "simbench_lv_urban6": (0.4,),
     "lv_schutterwald": (0.4,),
+    "ieee_european_lv_offpeak": (0.416,),
+    "ieee_european_lv_onpeak": (0.416,),
 }
 
 

@@ -26,7 +26,7 @@ def test_registry_and_provenance() -> None:
     for k in panel:
         info = NETWORKS[k]
         assert info.citation and info.country and info.kind in {"benchmark", "reference", "real"}
-        assert limits_for(k).voltage_levels_kv == (0.4,)
+        assert limits_for(k).voltage_levels_kv in {(0.4,), (0.416,)}  # UK feeder: 416 V
     assert NETWORKS["lv_schutterwald"].kind == "real"
     with pytest.raises(KeyError):
         make_network("nope")

@@ -1,0 +1,298 @@
+{
+  "uid": "gridsense-02-voltage",
+  "title": "GridSense 2 - Voltage quality",
+  "tags": [
+    "gridsense",
+    "telemetry"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "network",
+        "type": "query",
+        "datasource": {
+          "type": "postgres",
+          "uid": "gridsense-timescaledb"
+        },
+        "query": "SELECT DISTINCT network FROM public_gold.mart_voltage_quality_hourly ORDER BY 1",
+        "definition": "SELECT DISTINCT network FROM public_gold.mart_voltage_quality_hourly ORDER BY 1",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Violation rate (in-scope buses)",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT round(100.0 * sum(n_violations) / nullif(sum(n_readings), 0), 2) AS violation_rate_pct FROM public_gold.mart_voltage_quality_hourly WHERE network = '$network' AND is_in_scope"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Lowest voltage",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 4
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT min(min_voltage_pu) AS min_voltage_pu FROM public_gold.mart_voltage_quality_hourly WHERE network = '$network' AND is_in_scope"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Highest voltage",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 4
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT max(max_voltage_pu) AS max_voltage_pu FROM public_gold.mart_voltage_quality_hourly WHERE network = '$network' AND is_in_scope"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Voltage envelope (hourly, in-scope buses)",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 16,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 4
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT hour_bucket AS time, min(min_voltage_pu) AS min_pu, avg(avg_voltage_pu) AS mean_pu, max(max_voltage_pu) AS max_pu FROM public_gold.mart_voltage_quality_hourly WHERE network = '$network' AND is_in_scope AND $__timeFilter(hour_bucket) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Violation rate (hourly)",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 4,
+        "w": 8,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT hour_bucket AS time, round(100.0 * sum(n_violations) / nullif(sum(n_readings), 0), 2) AS violation_rate_pct FROM public_gold.mart_voltage_quality_hourly WHERE network = '$network' AND is_in_scope AND $__timeFilter(hour_bucket) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Buses by violation rate",
+      "type": "table",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 16,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT bus_id, round(min(min_voltage_pu)::numeric, 4) AS min_voltage_pu, round(max(max_voltage_pu)::numeric, 4) AS max_voltage_pu, sum(n_violations) AS violations, round(100.0 * sum(n_violations) / nullif(sum(n_readings), 0), 2) AS violation_rate_pct FROM public_gold.mart_voltage_quality_hourly WHERE network = '$network' AND is_in_scope GROUP BY bus_id ORDER BY violation_rate_pct DESC NULLS LAST LIMIT 20"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "How to read",
+      "type": "text",
+      "gridPos": {
+        "x": 16,
+        "y": 12,
+        "w": 8,
+        "h": 9
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Only **in-scope** buses (LV load buses) are judged; slack, generator and MV buses are excluded, exactly as in the hosting-capacity code (seed `network_voltage_scope`). The band comes from the network's default framework (seed `network_voltage_limits`). Meshed transmission test cases show high rates on buses without local voltage support: a property of the network, not a pipeline error."
+      }
+    }
+  ]
+}

@@ -1,0 +1,186 @@
+{
+  "uid": "gridsense-05-network-panel",
+  "title": "GridSense 5 - Network panel and unbalance",
+  "tags": [
+    "gridsense",
+    "hosting-capacity",
+    "networks"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "time": {
+    "from": "now-90d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "framework",
+        "type": "query",
+        "datasource": {
+          "type": "postgres",
+          "uid": "gridsense-timescaledb"
+        },
+        "query": "SELECT DISTINCT raw_value->'conditions'->>'framework' FROM bronze.hosting_capacity_results WHERE method = 'deterministic' AND raw_value->>'status' = 'ok' ORDER BY 1",
+        "definition": "SELECT DISTINCT raw_value->'conditions'->>'framework' FROM bronze.hosting_capacity_results WHERE method = 'deterministic' AND raw_value->>'status' = 'ok' ORDER BY 1",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Deterministic capacity across networks",
+      "type": "table",
+      "description": "Latest deterministic run per network and condition. lambda is installed PV per unit of nominal load (balanced networks) or kWp per customer (three-phase feeders): compare MW across networks, lambda only within a network.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 10
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH d AS (\n  SELECT DISTINCT ON (network, method, raw_value->'conditions'->>'framework',\n                      coalesce(raw_value->>'phase_model', 'balanced'),\n                      coalesce(raw_value->>'source_vm_pu', ''),\n                      coalesce(raw_value->'params'->>'existing_pv', ''),\n                      coalesce(raw_value->'conditions'->>'load_scale', ''))\n         network, method, run_timestamp, raw_value,\n         raw_value->'conditions'->>'framework' AS framework,\n         coalesce(raw_value->>'phase_model', 'balanced') AS phase_model\n  FROM bronze.hosting_capacity_results\n  WHERE method IN ('deterministic', 'stochastic') AND raw_value->>'status' = 'ok'\n  ORDER BY network, method, raw_value->'conditions'->>'framework',\n           coalesce(raw_value->>'phase_model', 'balanced'),\n           coalesce(raw_value->>'source_vm_pu', ''),\n           coalesce(raw_value->'params'->>'existing_pv', ''),\n           coalesce(raw_value->'conditions'->>'load_scale', ''),\n           run_timestamp DESC\n) SELECT network, raw_value->'params'->>'network_country' AS country, phase_model, round((raw_value->>'source_vm_pu')::numeric, 3) AS source_vm_pu, raw_value->'params'->>'existing_pv' AS existing_pv, raw_value->'conditions'->>'load_scale' AS load_scale, round((raw_value->>'lambda_max')::numeric, 3) AS lambda_max, coalesce(raw_value->>'lambda_unit', 'per_unit_of_nominal_load') AS lambda_unit, round((raw_value->>'total_pv_mw')::numeric, 3) AS total_pv_mw, raw_value->>'binding_constraint' AS binding_constraint FROM d WHERE method = 'deterministic' AND framework = '$framework' ORDER BY network, phase_model"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "What limits each network (binding constraint type)",
+      "type": "table",
+      "description": "Across all frameworks. Under PRODIST (1.05 pu) overvoltage tends to bind; under EN 50160 (1.10 pu) the transformer does.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH d AS (\n  SELECT DISTINCT ON (network, method, raw_value->'conditions'->>'framework',\n                      coalesce(raw_value->>'phase_model', 'balanced'),\n                      coalesce(raw_value->>'source_vm_pu', ''),\n                      coalesce(raw_value->'params'->>'existing_pv', ''),\n                      coalesce(raw_value->'conditions'->>'load_scale', ''))\n         network, method, run_timestamp, raw_value,\n         raw_value->'conditions'->>'framework' AS framework,\n         coalesce(raw_value->>'phase_model', 'balanced') AS phase_model\n  FROM bronze.hosting_capacity_results\n  WHERE method IN ('deterministic', 'stochastic') AND raw_value->>'status' = 'ok'\n  ORDER BY network, method, raw_value->'conditions'->>'framework',\n           coalesce(raw_value->>'phase_model', 'balanced'),\n           coalesce(raw_value->>'source_vm_pu', ''),\n           coalesce(raw_value->'params'->>'existing_pv', ''),\n           coalesce(raw_value->'conditions'->>'load_scale', ''),\n           run_timestamp DESC\n) SELECT framework, split_part(raw_value->>'binding_constraint', '@', 1) AS constraint_type, count(DISTINCT network) AS networks, string_agg(DISTINCT network, ', ') AS which FROM d WHERE method = 'deterministic' AND raw_value->>'binding_constraint' IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 3 DESC"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Effect of unbalance (three-phase feeders)",
+      "type": "table",
+      "description": "Same three-phase solver; balanced_equivalent spreads every load and PV evenly over the phases. A positive overestimate means the balanced model reports more room than exists.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 10,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH d AS (\n  SELECT DISTINCT ON (network, method, raw_value->'conditions'->>'framework',\n                      coalesce(raw_value->>'phase_model', 'balanced'),\n                      coalesce(raw_value->>'source_vm_pu', ''),\n                      coalesce(raw_value->'params'->>'existing_pv', ''),\n                      coalesce(raw_value->'conditions'->>'load_scale', ''))\n         network, method, run_timestamp, raw_value,\n         raw_value->'conditions'->>'framework' AS framework,\n         coalesce(raw_value->>'phase_model', 'balanced') AS phase_model\n  FROM bronze.hosting_capacity_results\n  WHERE method IN ('deterministic', 'stochastic') AND raw_value->>'status' = 'ok'\n  ORDER BY network, method, raw_value->'conditions'->>'framework',\n           coalesce(raw_value->>'phase_model', 'balanced'),\n           coalesce(raw_value->>'source_vm_pu', ''),\n           coalesce(raw_value->'params'->>'existing_pv', ''),\n           coalesce(raw_value->'conditions'->>'load_scale', ''),\n           run_timestamp DESC\n) SELECT network, framework, round((raw_value->>'source_vm_pu')::numeric, 3) AS source_vm_pu, round(max((raw_value->>'lambda_max')::numeric) FILTER (WHERE phase_model = 'unbalanced'), 2) AS unbalanced_kwp, round(max((raw_value->>'lambda_max')::numeric) FILTER (WHERE phase_model = 'balanced_equivalent'), 2) AS balanced_equivalent_kwp, round(100 * (max((raw_value->>'lambda_max')::numeric) FILTER (WHERE phase_model = 'balanced_equivalent') / nullif(max((raw_value->>'lambda_max')::numeric) FILTER (WHERE phase_model = 'unbalanced'), 0) - 1), 1) AS balanced_overestimate_pct, round(max((raw_value->>'max_vuf_percent')::numeric) FILTER (WHERE phase_model = 'unbalanced'), 2) AS max_vuf_pct FROM d WHERE method = 'deterministic' AND raw_value ? 'phase_model' GROUP BY 1, 2, 3 ORDER BY 1, 2, 3"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Hosting capacity by network (MW)",
+      "type": "bargauge",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "MW",
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH d AS (\n  SELECT DISTINCT ON (network, method, raw_value->'conditions'->>'framework',\n                      coalesce(raw_value->>'phase_model', 'balanced'),\n                      coalesce(raw_value->>'source_vm_pu', ''),\n                      coalesce(raw_value->'params'->>'existing_pv', ''),\n                      coalesce(raw_value->'conditions'->>'load_scale', ''))\n         network, method, run_timestamp, raw_value,\n         raw_value->'conditions'->>'framework' AS framework,\n         coalesce(raw_value->>'phase_model', 'balanced') AS phase_model\n  FROM bronze.hosting_capacity_results\n  WHERE method IN ('deterministic', 'stochastic') AND raw_value->>'status' = 'ok'\n  ORDER BY network, method, raw_value->'conditions'->>'framework',\n           coalesce(raw_value->>'phase_model', 'balanced'),\n           coalesce(raw_value->>'source_vm_pu', ''),\n           coalesce(raw_value->'params'->>'existing_pv', ''),\n           coalesce(raw_value->'conditions'->>'load_scale', ''),\n           run_timestamp DESC\n) SELECT network || CASE WHEN phase_model <> 'balanced' THEN ' / ' || phase_model ELSE '' END AS label, (raw_value->>'total_pv_mw')::float AS mw FROM d WHERE method = 'deterministic' AND framework = '$framework' AND raw_value->>'total_pv_mw' IS NOT NULL ORDER BY 2 DESC"
+        }
+      ]
+    }
+  ]
+}

@@ -26,6 +26,7 @@ account, managed service, or paid license is required at any phase.
 | **7.1 — Duration criteria** | ✅ **current** | PRODIST DRP/DRC and EN 50160 weekly criteria with PV attribution (closes C7); deterministic/stochastic take their operating point from the same series; London data (`uk_pv`). See [`docs/CHANGES_phase7.1-duration-criteria.md`](docs/CHANGES_phase7.1-duration-criteria.md). |
 | 7.2 — Study design | ✅ | Experiments E1–E4 (method × criterion, weather-year replicates, resolution bias, transfer checks); London: LCL load 2013 + `uk_pv` PV 2018–2024 with weekday-aligned year transfer. See [`docs/STUDY_DESIGN.md`](docs/STUDY_DESIGN.md). |
 | 7.3 — Network panel | ✅ | Seven LV grids (CIGRE, Kerber, SimBench rural/semi-urban/urban, **real** Schutterwald grid); existing-PV policy; SimBench with its own per-load profiles (no data transfer). See [`docs/CHANGES_phase7.3-network-panel.md`](docs/CHANGES_phase7.3-network-panel.md). |
+| 7.4 — Three-phase + dashboards | ✅ | Unbalanced hosting capacity on the IEEE European LV feeder (UK), balanced-equivalent control on the same solver; five new Grafana dashboards validated against real payloads. See [`docs/CHANGES_phase7.4-unbalanced-and-dashboards.md`](docs/CHANGES_phase7.4-unbalanced-and-dashboards.md). |
 | 8 — Certified surrogate + open dataset | 🔲 planned (prototype outside the repo) | Physics prior (LinDistFlow) + learned residual with conformal screening, as an accelerator inside the Phase 6 estimators. Renumbered from 7: its large speed-up needs the duration criterion τ̄ and benefits from real-data training. |
 | 9 — Streaming HC / operating envelope | 🔲 planned | Continuous envelope recomputation over the existing Kafka pipeline. |
 
@@ -246,6 +247,8 @@ python scripts/run_hosting_capacity_study.py --network cigre_lv \
 | `--qsts-peak-load` | Rescale the synthetic load so its peak equals this multiplier (e.g. `1.0`). Required for long `cigre_lv` runs (R22); recorded in the payload. |
 | `--qsts-criterion` | `zero_tolerance` (default, legacy QSTS) · `prodist_m8_drp_drc` (DRP ≤ 3 %, DRC ≤ 0.5 % over weekly 10-min readings) · `en50160_weekly` · `prodist_m8_zero_tolerance`. Duration criteria run week by week with PV attribution; use a 10-min series. |
 | `--network` | Distribution panel: `cigre_lv`, `kerber_landnetz`, `kerber_vorstadt`, `simbench_lv_rural1`, `simbench_lv_semiurb4`, `simbench_lv_urban6` (SimBench needs the `data` extra), `lv_schutterwald`. |
+| `--phase-model` | Three-phase feeders (`ieee_european_lv_offpeak`/`_onpeak`): `unbalanced` (default) or `balanced_equivalent`. |
+| `--source-vm-pu` | Override the feeder source voltage (the IEEE European LV feeder is specified at 1.05 pu). |
 | `--existing-pv` | `remove` (default: capacity on an empty grid) or `keep` (additional capacity). Recorded in `params`. |
 | `--qsts-network-profiles` | SimBench grids only: QSTS on the grid's own per-load profiles (15 min, 2016), with `--qsts-start`/`--qsts-days`. |
 | `--critical-point-from-series` | Deterministic/stochastic use the operating point taken from `--qsts-series` (max PV, min load); λ = installed capacity. |
@@ -353,7 +356,7 @@ gridsense-simulator/
 ├── ingestion/                       # Kafka -> Parquet -> TimescaleDB (+ HC loader)
 ├── transform/                       # dbt: seeds, staging/silver/gold, tests
 ├── api/                             # FastAPI read layer (+ Dockerfile)
-├── grafana/                         # provisioning + 3 dashboards
+├── grafana/                         # provisioning + 5 generated dashboards
 └── data/                            # generated, gitignored (raw/ cache, series/, bronze/, ...)
 ```
 

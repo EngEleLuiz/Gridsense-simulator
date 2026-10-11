@@ -1,0 +1,185 @@
+{
+  "uid": "gridsense-03-hc-methods",
+  "title": "GridSense 3 - Hosting capacity: methods",
+  "tags": [
+    "gridsense",
+    "hosting-capacity"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "time": {
+    "from": "now-90d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "network",
+        "type": "query",
+        "datasource": {
+          "type": "postgres",
+          "uid": "gridsense-timescaledb"
+        },
+        "query": "SELECT DISTINCT network FROM public_gold.mart_hosting_capacity ORDER BY 1",
+        "definition": "SELECT DISTINCT network FROM public_gold.mart_hosting_capacity ORDER BY 1",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Latest comparable result per method, criterion and operating point",
+      "type": "table",
+      "description": "Compare rows only within the same criterion_framework and load_scale. Stochastic rows are the alpha quantile of the critical penetration with a distribution-free CI.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT DISTINCT ON (method, criterion_framework, load_scale, hc_alpha) method, criterion_framework, load_scale, hc_alpha, round(lambda_max::numeric, 3) AS lambda_max, round(total_pv_mw_comparable::numeric, 3) AS total_pv_mw, binding_constraint, round(hc_lambda_ci_low::numeric, 3) AS ci_low, round(hc_lambda_ci_high::numeric, 3) AS ci_high, run_timestamp FROM public_gold.mart_hosting_capacity WHERE network = '$network' AND is_comparable ORDER BY method, criterion_framework, load_scale, hc_alpha, run_timestamp DESC"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Hosting capacity by method and criterion (MW)",
+      "type": "bargauge",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "MW",
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT DISTINCT ON (method, criterion_framework) method || ' / ' || criterion_framework AS label, total_pv_mw_comparable AS mw FROM public_gold.mart_hosting_capacity WHERE network = '$network' AND is_comparable ORDER BY method, criterion_framework, run_timestamp DESC"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Binding constraint types (comparable runs)",
+      "type": "table",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT method, criterion_framework, split_part(binding_constraint, '@', 1) AS constraint_type, count(*) AS runs FROM public_gold.mart_hosting_capacity WHERE network = '$network' AND is_comparable AND binding_constraint IS NOT NULL GROUP BY 1, 2, 3 ORDER BY 1, 2, 4 DESC"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Runs that are not comparable (and why)",
+      "type": "table",
+      "description": "baseline_infeasible = the network already violates the band without PV; legacy payloads and stochastic rows without a CI are also excluded from comparison.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT method, status, criterion_framework, is_bounded, is_resolved, left(coalesce(error, ''), 140) AS error, run_timestamp FROM public_gold.mart_hosting_capacity WHERE network = '$network' AND NOT is_comparable ORDER BY run_timestamp DESC LIMIT 20"
+        }
+      ]
+    }
+  ]
+}
