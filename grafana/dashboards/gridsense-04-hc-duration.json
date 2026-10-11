@@ -1,0 +1,177 @@
+{
+  "uid": "gridsense-04-hc-duration",
+  "title": "GridSense 4 - Hosting capacity: duration criteria",
+  "tags": [
+    "gridsense",
+    "hosting-capacity",
+    "prodist"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "time": {
+    "from": "now-90d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "network",
+        "type": "query",
+        "datasource": {
+          "type": "postgres",
+          "uid": "gridsense-timescaledb"
+        },
+        "query": "SELECT DISTINCT network FROM bronze.hosting_capacity_results WHERE method = 'qsts' ORDER BY 1",
+        "definition": "SELECT DISTINCT network FROM bronze.hosting_capacity_results WHERE method = 'qsts' ORDER BY 1",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Latest QSTS result per criterion and series",
+      "type": "table",
+      "description": "zero_tolerance / prodist_m8_zero_tolerance: first violating step. prodist_m8_drp_drc: weekly DRP <= 3 %, DRC <= 0.5 % over 10-min readings with PV attribution. week_p10/p50: spread of the weekly capacities.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH q AS (\n  SELECT DISTINCT ON (raw_value->>'criterion',\n                      coalesce(raw_value->>'series_manifest_sha256', raw_value->>'series_source', 'synthetic'))\n         network, run_timestamp, raw_value\n  FROM bronze.hosting_capacity_results\n  WHERE method = 'qsts' AND network = '$network' AND raw_value->>'status' = 'ok'\n  ORDER BY raw_value->>'criterion',\n           coalesce(raw_value->>'series_manifest_sha256', raw_value->>'series_source', 'synthetic'),\n           run_timestamp DESC\n) SELECT raw_value->>'criterion' AS criterion, round((raw_value->>'lambda_max')::numeric, 3) AS lambda_max, round((raw_value->>'total_pv_mw')::numeric, 3) AS total_pv_mw, raw_value->>'binding_constraint' AS binding_constraint, coalesce(raw_value->>'series_source', 'synthetic') AS series, round((raw_value->'window_lambda_quantiles'->>'p10')::numeric, 3) AS week_p10, round((raw_value->'window_lambda_quantiles'->>'p50')::numeric, 3) AS week_p50, raw_value->>'baseline_lower_compliant' AS baseline_lower_ok, run_timestamp FROM q ORDER BY series, criterion"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Effect of the duration criterion (per series)",
+      "type": "table",
+      "description": "duration_gain_pct: how much the PRODIST weekly allowance raises the capacity over the zero-tolerance QSTS on the same series. Expect >= 0 (tested invariant).",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 14,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH q AS (\n  SELECT DISTINCT ON (raw_value->>'criterion',\n                      coalesce(raw_value->>'series_manifest_sha256', raw_value->>'series_source', 'synthetic'))\n         network, run_timestamp, raw_value\n  FROM bronze.hosting_capacity_results\n  WHERE method = 'qsts' AND network = '$network' AND raw_value->>'status' = 'ok'\n  ORDER BY raw_value->>'criterion',\n           coalesce(raw_value->>'series_manifest_sha256', raw_value->>'series_source', 'synthetic'),\n           run_timestamp DESC\n) SELECT coalesce(raw_value->>'series_source', 'synthetic') AS series, round(max((raw_value->>'lambda_max')::numeric) FILTER (WHERE raw_value->>'criterion' IN ('zero_tolerance', 'prodist_m8_zero_tolerance')), 3) AS tau_zero, round(max((raw_value->>'lambda_max')::numeric) FILTER (WHERE raw_value->>'criterion' = 'prodist_m8_drp_drc'), 3) AS prodist_drp_drc, round(max((raw_value->>'lambda_max')::numeric) FILTER (WHERE raw_value->>'criterion' = 'en50160_weekly'), 3) AS en50160_weekly, round(100 * (max((raw_value->>'lambda_max')::numeric) FILTER (WHERE raw_value->>'criterion' = 'prodist_m8_drp_drc') / nullif(max((raw_value->>'lambda_max')::numeric) FILTER (WHERE raw_value->>'criterion' IN ('zero_tolerance', 'prodist_m8_zero_tolerance')), 0) - 1), 1) AS duration_gain_pct FROM q GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Verification at the capacity (critical week, worst bus)",
+      "type": "table",
+      "description": "Exact per-bus recount at the reported capacity. PRODIST allows DRP 3 % and DRC 0.5 %.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 8,
+        "w": 10,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH q AS (\n  SELECT DISTINCT ON (raw_value->>'criterion',\n                      coalesce(raw_value->>'series_manifest_sha256', raw_value->>'series_source', 'synthetic'))\n         network, run_timestamp, raw_value\n  FROM bronze.hosting_capacity_results\n  WHERE method = 'qsts' AND network = '$network' AND raw_value->>'status' = 'ok'\n  ORDER BY raw_value->>'criterion',\n           coalesce(raw_value->>'series_manifest_sha256', raw_value->>'series_source', 'synthetic'),\n           run_timestamp DESC\n) SELECT raw_value->>'criterion' AS criterion, raw_value->>'critical_window' AS critical_week, round(100 * (raw_value->'verification'->>'worst_bus_upper_drp')::numeric, 2) AS worst_bus_drp_pct, round(100 * (raw_value->'verification'->>'worst_bus_upper_drc')::numeric, 2) AS worst_bus_drc_pct, raw_value->'verification'->>'within_regulatory_allowance_per_bus' AS within_allowance FROM q WHERE raw_value ? 'verification' ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Weekly capacities",
+      "type": "barchart",
+      "description": "One bar per week and criterion. The annual capacity is the minimum over weeks.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gridsense-timescaledb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "xField": "week",
+        "orientation": "vertical",
+        "groupWidth": 0.7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "gridsense-timescaledb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH q AS (\n  SELECT DISTINCT ON (raw_value->>'criterion',\n                      coalesce(raw_value->>'series_manifest_sha256', raw_value->>'series_source', 'synthetic'))\n         network, run_timestamp, raw_value\n  FROM bronze.hosting_capacity_results\n  WHERE method = 'qsts' AND network = '$network' AND raw_value->>'status' = 'ok'\n  ORDER BY raw_value->>'criterion',\n           coalesce(raw_value->>'series_manifest_sha256', raw_value->>'series_source', 'synthetic'),\n           run_timestamp DESC\n) SELECT 'week ' || lpad(w->>'index', 2, '0') AS week, raw_value->>'criterion' AS criterion, (w->>'lambda_max')::float AS lambda_max FROM q, jsonb_array_elements(q.raw_value->'windows') AS w WHERE w->>'lambda_max' IS NOT NULL ORDER BY 1, 2"
+        }
+      ]
+    }
+  ]
+}
