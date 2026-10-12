@@ -30,12 +30,18 @@ OUT = Path(__file__).resolve().parents[1] / "grafana" / "dashboards"
 # Latest successful QSTS run per (criterion, series) for the selected network.
 QSTS_LATEST = """WITH q AS (
   SELECT DISTINCT ON (raw_value->>'criterion',
-                      coalesce(raw_value->>'series_manifest_sha256', raw_value->>'series_source', 'synthetic'))
+                      coalesce(raw_value->>'series_source', 'synthetic'),
+                      coalesce(raw_value->>'series_manifest_sha256', ''),
+                      coalesce(raw_value->'params'->>'series_block_average_min', ''),
+                      coalesce(raw_value->'params'->>'load_aggregated', ''))
          network, run_timestamp, raw_value
   FROM bronze.hosting_capacity_results
   WHERE method = 'qsts' AND network = '$network' AND raw_value->>'status' = 'ok'
   ORDER BY raw_value->>'criterion',
-           coalesce(raw_value->>'series_manifest_sha256', raw_value->>'series_source', 'synthetic'),
+           coalesce(raw_value->>'series_source', 'synthetic'),
+           coalesce(raw_value->>'series_manifest_sha256', ''),
+           coalesce(raw_value->'params'->>'series_block_average_min', ''),
+           coalesce(raw_value->'params'->>'load_aggregated', ''),
            run_timestamp DESC
 )"""
 
@@ -172,12 +178,16 @@ def hc_methods() -> dict:
     m = "public_gold.mart_hosting_capacity"
     p = [
         panel(1, "Latest comparable result per method, criterion and operating point", "table",
-              "SELECT DISTINCT ON (method, criterion_framework, load_scale, hc_alpha) "
-              "method, criterion_framework, load_scale, hc_alpha, round(lambda_max::numeric, 3) AS lambda_max, "
+              "SELECT DISTINCT ON (method, criterion_framework, load_scale, hc_alpha, series_source, "
+              "series_block_average_min, phase_model, existing_pv) "
+              "method, criterion_framework, load_scale, hc_alpha, series_source, "
+              "series_block_average_min AS block_min, phase_model, existing_pv, "
+              "round(lambda_max::numeric, 3) AS lambda_max, "
               "round(total_pv_mw_comparable::numeric, 3) AS total_pv_mw, binding_constraint, "
               "round(hc_lambda_ci_low::numeric, 3) AS ci_low, round(hc_lambda_ci_high::numeric, 3) AS ci_high, "
-              f"run_timestamp FROM {m} WHERE network = '$network' AND is_comparable "
-              "ORDER BY method, criterion_framework, load_scale, hc_alpha, run_timestamp DESC",
+              f"run_label, run_timestamp FROM {m} WHERE network = '$network' AND is_comparable "
+              "ORDER BY method, criterion_framework, load_scale, hc_alpha, series_source, "
+              "series_block_average_min, phase_model, existing_pv, run_timestamp DESC",
               (0, 0, 24, 9),
               desc="Compare rows only within the same criterion_framework and load_scale. Stochastic rows are "
                    "the alpha quantile of the critical penetration with a distribution-free CI."),
@@ -224,7 +234,7 @@ def hc_duration() -> dict:
                    "DRP <= 3 %, DRC <= 0.5 % over 10-min readings with PV attribution. week_p10/p50: spread of "
                    "the weekly capacities."),
         panel(2, "Effect of the duration criterion (per series)", "table",
-              QSTS_LATEST + " SELECT coalesce(raw_value->>'series_source', 'synthetic') AS series, "
+              QSTS_LATEST + " SELECT coalesce(raw_value->>'series_source', 'synthetic') || coalesce(' | ' || (raw_value->'params'->>'series_block_average_min') || ' min blocks', '') || CASE WHEN raw_value->'params'->>'load_aggregated' = 'true' THEN ' | aggregated load' ELSE '' END AS series, "
               "round(max((raw_value->>'lambda_max')::numeric) FILTER (WHERE raw_value->>'criterion' IN "
               "('zero_tolerance', 'prodist_m8_zero_tolerance')), 3) AS tau_zero, "
               "round(max((raw_value->>'lambda_max')::numeric) FILTER (WHERE raw_value->>'criterion' = "

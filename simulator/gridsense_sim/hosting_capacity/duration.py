@@ -124,9 +124,12 @@ DURATION_CRITERIA: dict[str, DurationCriterion] = {
         critical_lo_pu=191 / 220, critical_hi_pu=233 / 220,
         upper_precarious_max=0.03, upper_critical_max=0.005,
         lower_precarious_max=0.03, lower_critical_max=0.005,
-        reference="ANEEL PRODIST Module 8: DRP <= 3 %, DRC <= 0.5 % over 1008 10-min readings; "
-                  "bands from the 220 V table (202-231 V adequate; 191-202 / 231-233 V precarious)",
-        to_verify=True,
+        reference="ANEEL PRODIST Module 8, rev. 13 (REN 956/2021): items 26.2 (1008 10-min readings), "
+                  "26.5 (nlp/nlc = worst phase), 28 (DRP <= 3 %, DRC <= 0.5 %), Table 4 adequate band "
+                  "202-231 V (verified). Precarious/critical edges 191 V and 233 V from secondary sources. "
+                  "Each 168-h window must comply (eventual measurement); permanent measurement uses the "
+                  "monthly mean of the windows (item 26.6), which is less strict",
+        to_verify=True,  # only the precarious/critical edges remain unverified
     ),
     "en50160_weekly": DurationCriterion(
         name="en50160_weekly",

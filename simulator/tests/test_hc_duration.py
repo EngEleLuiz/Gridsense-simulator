@@ -280,3 +280,25 @@ def test_block_average_conserves_energy_and_removes_variability() -> None:
     assert hourly.source.endswith("|block60min")
     with pytest.raises(ValueError):
         block_average(ts, 7)
+
+
+# ------------------------------------------------- protocol checks (7.5)
+def test_warm_start_across_windows_matches_independent_windows(cigre) -> None:
+    """Each window of a multi-window run must equal that window run alone (no warm start)."""
+    base = _day_series(days=4)
+    scale = np.repeat([1.0, 0.55, 1.2, 0.8], 24)  # windows with very different loading
+    ts = TimeSeries(load_mult=base.load_mult * scale, pv_mult=base.pv_mult, steps_per_day=24)
+    together = find_hosting_capacity_duration(cigre, "cigre_lv", ts, DAY, tolerance=0.01, verify=False)
+    for w in range(4):
+        alone = find_hosting_capacity_duration(cigre, "cigre_lv", ts, DAY, windows=[w], tolerance=0.01,
+                                               verify=False)
+        assert together.windows[w].lambda_max == pytest.approx(alone.windows[0].lambda_max, abs=0.011)
+    lams = [w.lambda_max for w in together.windows]
+    assert together.lambda_max == pytest.approx(min(lams))
+    assert len({round(x, 2) for x in lams}) > 1  # the windows really differ
+
+
+def test_sixty_scenarios_give_a_ci_for_p10() -> None:
+    from gridsense_sim.hosting_capacity import min_samples_for_ci
+
+    assert min_samples_for_ci(0.10, 0.95) <= 60

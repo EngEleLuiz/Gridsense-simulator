@@ -62,7 +62,7 @@
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT DISTINCT ON (method, criterion_framework, load_scale, hc_alpha) method, criterion_framework, load_scale, hc_alpha, round(lambda_max::numeric, 3) AS lambda_max, round(total_pv_mw_comparable::numeric, 3) AS total_pv_mw, binding_constraint, round(hc_lambda_ci_low::numeric, 3) AS ci_low, round(hc_lambda_ci_high::numeric, 3) AS ci_high, run_timestamp FROM public_gold.mart_hosting_capacity WHERE network = '$network' AND is_comparable ORDER BY method, criterion_framework, load_scale, hc_alpha, run_timestamp DESC"
+          "rawSql": "SELECT DISTINCT ON (method, criterion_framework, load_scale, hc_alpha, series_source, series_block_average_min, phase_model, existing_pv) method, criterion_framework, load_scale, hc_alpha, series_source, series_block_average_min AS block_min, phase_model, existing_pv, round(lambda_max::numeric, 3) AS lambda_max, round(total_pv_mw_comparable::numeric, 3) AS total_pv_mw, binding_constraint, round(hc_lambda_ci_low::numeric, 3) AS ci_low, round(hc_lambda_ci_high::numeric, 3) AS ci_high, run_label, run_timestamp FROM public_gold.mart_hosting_capacity WHERE network = '$network' AND is_comparable ORDER BY method, criterion_framework, load_scale, hc_alpha, series_source, series_block_average_min, phase_model, existing_pv, run_timestamp DESC"
         }
       ]
     },

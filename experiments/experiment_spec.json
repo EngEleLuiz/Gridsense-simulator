@@ -1,0 +1,154 @@
+{
+  "name": "GridSense phase 7.5 pre-registered experiments",
+  "version": 1,
+  "status": "pre-registered before any result is read; change = new version with justification",
+  "output_dir": "experiments/results",
+  "workers": 4,
+  "notes": [
+    "Series that must exist before the run (built once with gridsense-data build-series; see the spec's series list).",
+    "E1: method x criterion on the full 2018 London year (LCL 2013 load, uk_pv 2018 PV).",
+    "E3: the same series at 10 min vs hourly (block average 60 min).",
+    "E4: normalisation peak x1.0 vs x0.9 (two series), and weekday alignment on vs off (two series). Only the cells listed here are pre-registered.",
+    "E5: SimBench grids with their own profiles, full year 2016, no transfer.",
+    "Primary criterion prodist_m8_drp_drc; tau = 0 is prodist_m8_zero_tolerance; EN 50160 is a contrast."
+  ],
+  "cells": [
+    {
+      "id": "E1_london2018_deterministic_stochastic",
+      "description": "E1 snapshot methods on the London year, critical point taken from the series",
+      "network": "cigre_lv",
+      "methods": [
+        "deterministic",
+        "stochastic"
+      ],
+      "framework": "prodist_m8_bt",
+      "qsts_series": "data/series/london_2018_year.parquet",
+      "critical_point_from_series": true,
+      "mc_n_scenarios": 200,
+      "seed": 42
+    },
+    {
+      "id": "E1_london2018_qsts_tau0",
+      "description": "E1 QSTS, zero tolerance, full year",
+      "network": "cigre_lv",
+      "methods": [
+        "qsts"
+      ],
+      "qsts_series": "data/series/london_2018_year.parquet",
+      "qsts_criterion": "prodist_m8_zero_tolerance"
+    },
+    {
+      "id": "E1_london2018_qsts_prodist",
+      "description": "E1 QSTS, PRODIST DRP/DRC, full year (primary)",
+      "network": "cigre_lv",
+      "methods": [
+        "qsts"
+      ],
+      "qsts_series": "data/series/london_2018_year.parquet",
+      "qsts_criterion": "prodist_m8_drp_drc"
+    },
+    {
+      "id": "E1_london2018_qsts_en50160",
+      "description": "E1 QSTS, EN 50160 weekly (contrast)",
+      "network": "cigre_lv",
+      "methods": [
+        "qsts"
+      ],
+      "qsts_series": "data/series/london_2018_year.parquet",
+      "qsts_criterion": "en50160_weekly"
+    },
+    {
+      "id": "E3_london2018_hourly_prodist",
+      "description": "E3 same series averaged to hourly blocks, PRODIST DRP/DRC",
+      "network": "cigre_lv",
+      "methods": [
+        "qsts"
+      ],
+      "qsts_series": "data/series/london_2018_year.parquet",
+      "qsts_criterion": "prodist_m8_drp_drc",
+      "block_average_min": 60
+    },
+    {
+      "id": "E5_simbench_rural1_year",
+      "description": "E5 SimBench rural, own profiles, full year 2016, no transfer",
+      "network": "simbench_lv_rural1",
+      "methods": [
+        "deterministic",
+        "qsts"
+      ],
+      "framework": "prodist_m8_bt",
+      "qsts_network_profiles": true,
+      "qsts_start": "2016-01-04",
+      "qsts_days": 357,
+      "qsts_criterion": "prodist_m8_drp_drc",
+      "critical_point_from_series": true,
+      "existing_pv": "keep"
+    },
+    {
+      "id": "E5_simbench_semiurb4_year",
+      "description": "E5 SimBench semi-urban, own profiles, full year 2016",
+      "network": "simbench_lv_semiurb4",
+      "methods": [
+        "deterministic",
+        "qsts"
+      ],
+      "framework": "prodist_m8_bt",
+      "qsts_network_profiles": true,
+      "qsts_start": "2016-01-04",
+      "qsts_days": 357,
+      "qsts_criterion": "prodist_m8_drp_drc",
+      "critical_point_from_series": true,
+      "existing_pv": "keep"
+    },
+    {
+      "id": "E5_simbench_urban6_year",
+      "description": "E5 SimBench urban, own profiles, full year 2016",
+      "network": "simbench_lv_urban6",
+      "methods": [
+        "deterministic",
+        "qsts"
+      ],
+      "framework": "prodist_m8_bt",
+      "qsts_network_profiles": true,
+      "qsts_start": "2016-01-04",
+      "qsts_days": 357,
+      "qsts_criterion": "prodist_m8_drp_drc",
+      "critical_point_from_series": true,
+      "existing_pv": "keep"
+    },
+    {
+      "id": "E4_london2018_peak09_prodist",
+      "description": "E4 normalisation peak x0.9, PRODIST DRP/DRC",
+      "network": "cigre_lv",
+      "methods": [
+        "qsts"
+      ],
+      "qsts_series": "data/series/london_2018_year_peak09.parquet",
+      "qsts_criterion": "prodist_m8_drp_drc"
+    },
+    {
+      "id": "E4_london2018_noalign_prodist",
+      "description": "E4 weekday alignment off, PRODIST DRP/DRC",
+      "network": "cigre_lv",
+      "methods": [
+        "qsts"
+      ],
+      "qsts_series": "data/series/london_2018_year_noalign.parquet",
+      "qsts_criterion": "prodist_m8_drp_drc"
+    }
+  ],
+  "series": [
+    {
+      "path": "data/series/london_2018_year.parquet",
+      "build": "gridsense-data build-series --load lcl --load-file <LCL csv> --load-opt start=2013-01-01 --load-opt end=2014-01-01 --pv uk_pv --pv-file data/raw/uk_pv --pv-opt start=2018-01-01 --pv-opt end=2019-01-01 --pv-opt radius_km=30 --site london --start 2018-01-08 --days 357 --steps-per-day 144 --out data/series/london_2018_year.parquet"
+    },
+    {
+      "path": "data/series/london_2018_year_peak09.parquet",
+      "build": "same as above with --peak-load 0.9 (E4)"
+    },
+    {
+      "path": "data/series/london_2018_year_noalign.parquet",
+      "build": "same as london_2018_year.parquet with --no-align-weekday (E4)"
+    }
+  ]
+}
