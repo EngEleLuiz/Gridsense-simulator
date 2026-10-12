@@ -46,6 +46,7 @@ Run with::
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import logging
 import math
@@ -509,6 +510,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="SimBench grids only: QSTS on the grid's own load and PV profiles (one "
                         "profile per load, 15 min, 2016) - no data transfer. Needs a duration "
                         "--qsts-criterion (use prodist_m8_zero_tolerance for tau = 0).")
+    p.add_argument("--qsts-aggregate-load", action="store_true",
+                   help="With --qsts-network-profiles: replace the per-load profiles by their weighted "
+                        "aggregate on every load (sensitivity; the per-load profiles are the main case).")
+    p.add_argument("--run-label", default=None,
+                   help="Free label stored in params.run_label (e.g. 'protocol-v1/D-semiurb4-drp').")
     p.add_argument("--qsts-start", default="2016-06-01", help="With --qsts-network-profiles.")
     p.add_argument("--qsts-days", type=int, default=28, help="With --qsts-network-profiles.")
     p.add_argument("--qsts-block-average", type=int, default=None, metavar="MIN",
@@ -541,6 +547,8 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         (not args.critical_point_from_series or args.qsts_series is not None or args.qsts_network_profiles,
          "--critical-point-from-series needs --qsts-series or --qsts-network-profiles"),
         (0 < args.critical_point_pv_fraction <= 1, "--critical-point-pv-fraction must be in (0, 1]"),
+        (not args.qsts_aggregate_load or args.qsts_network_profiles,
+         "--qsts-aggregate-load only applies with --qsts-network-profiles"),
         (not args.qsts_network_profiles or args.network.startswith("simbench_"),
          "--qsts-network-profiles only applies to SimBench networks"),
         (not args.qsts_network_profiles or args.qsts_criterion != "zero_tolerance",
@@ -615,6 +623,11 @@ def main(argv: list[str] | None = None) -> None:
 
         full_net = make_network(args.network, existing_pv="keep")  # PV sizes weight the PV profile
         own_ts, own_matrix, own_info = network_series(full_net, args.qsts_start, args.qsts_days)
+        if args.qsts_aggregate_load:  # sensitivity: every load follows the weighted aggregate
+            own_matrix = np.tile(np.asarray(own_ts.load_mult, dtype=float)[:, None], (1, own_matrix.shape[1]))
+            own_info = {**own_info, "load_aggregated": True}
+            # mark the variant in the series identifier, so the mart and dashboards keep it apart
+            own_ts = dataclasses.replace(own_ts, source=f"{own_ts.source}|aggregated_load")
         if args.qsts_block_average:
             own_ts = block_average(own_ts, args.qsts_block_average)
             k = args.qsts_block_average // 15  # SimBench step: 15 min
@@ -626,7 +639,8 @@ def main(argv: list[str] | None = None) -> None:
             qsts_kwargs = {**common, "criterion": args.qsts_criterion, **duration_extras,
                            "load_matrix": own_matrix}
             qsts_series_info = {"series_source": own_ts.source, "network_profiles": own_info,
-                                "series_block_average_min": args.qsts_block_average}
+                                "series_block_average_min": args.qsts_block_average,
+                                "load_aggregated": bool(args.qsts_aggregate_load)}
         if args.critical_point_from_series:
             cp = critical_point(own_ts, args.critical_point_rule, args.critical_point_pv_fraction)
             # Per-load state of the critical step: the snapshot sees exactly the load
@@ -685,7 +699,7 @@ def main(argv: list[str] | None = None) -> None:
         qsts_series=qsts_series,
         qsts_series_info=qsts_series_info,
         snapshot_info=snapshot_info,
-        context_info={"existing_pv": args.existing_pv,
+        context_info={"existing_pv": args.existing_pv, "run_label": args.run_label,
                       "network_kind": NETWORKS[args.network].kind,
                       "network_country": NETWORKS[args.network].country},
     )
