@@ -44,6 +44,12 @@ select
     qsts_total_steps,
     qsts_steps_per_day,
     qsts_first_violating_step,
+    series_source,
+    series_manifest_sha256,
+    series_block_average_min,
+    phase_model,
+    existing_pv,
+    run_label,
     git_commit,
     git_dirty
 from {{ ref('stg_hosting_capacity_results') }}

@@ -82,6 +82,18 @@ typed as (
         (raw_value ->> 'steps_per_day')::integer as qsts_steps_per_day,
         (raw_value ->> 'first_violating_step')::integer as qsts_first_violating_step,
 
+        -- Study conditions that distinguish otherwise identical rows (Phase 7.5):
+        -- which series fed a QSTS run, at which resolution, which phase model,
+        -- which existing-PV policy, and which experiment protocol run it was.
+        coalesce(raw_value ->> 'series_source', raw_value -> 'params' ->> 'series_source', 'synthetic')
+            as series_source,
+        coalesce(raw_value ->> 'series_manifest_sha256', raw_value -> 'params' ->> 'series_manifest_sha256')
+            as series_manifest_sha256,
+        (raw_value -> 'params' ->> 'series_block_average_min')::integer as series_block_average_min,
+        coalesce(raw_value ->> 'phase_model', 'balanced') as phase_model,
+        raw_value -> 'params' ->> 'existing_pv' as existing_pv,
+        raw_value -> 'params' ->> 'run_label' as run_label,
+
         raw_value -> 'provenance' ->> 'git_commit' as git_commit,
         (raw_value -> 'provenance' ->> 'git_dirty')::boolean as git_dirty
 
