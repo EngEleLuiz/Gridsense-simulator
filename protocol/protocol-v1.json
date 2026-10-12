@@ -1,0 +1,855 @@
+{
+  "id": "protocol-v1",
+  "description": "Frozen experiment battery: PRODIST primary, EN 50160 as European contrast; SimBench (own per-load profiles, no data transfer) as main case; aggregated load as sensitivity on SimBench; London as secondary case.",
+  "output_dir": "data/protocol-v1",
+  "fixed_parameters": {
+    "tolerance": 0.01,
+    "critical_point_rule": "min_load_high_pv",
+    "critical_point_pv_fraction": 0.9,
+    "stochastic_alpha": 0.1,
+    "stochastic_scenarios": 60,
+    "adoption_fraction": [
+      0.3,
+      1.0
+    ],
+    "existing_pv": "remove",
+    "literature_load_scale": 0.25,
+    "simbench_year_window": [
+      "2016-01-04",
+      357
+    ],
+    "london_radius_km": 30,
+    "normalize": "source_peak"
+  },
+  "runs": [
+    {
+      "group": "A_deterministic_panel",
+      "name": "A-cigre_lv-prodist_m8_bt",
+      "args": [
+        "--network",
+        "cigre_lv",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "prodist_m8_bt"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "A_deterministic_panel",
+      "name": "A-cigre_lv-en50160_envelope",
+      "args": [
+        "--network",
+        "cigre_lv",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "en50160_envelope"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "A_deterministic_panel",
+      "name": "A-kerber_landnetz-prodist_m8_bt",
+      "args": [
+        "--network",
+        "kerber_landnetz",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "prodist_m8_bt"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "A_deterministic_panel",
+      "name": "A-kerber_landnetz-en50160_envelope",
+      "args": [
+        "--network",
+        "kerber_landnetz",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "en50160_envelope"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "A_deterministic_panel",
+      "name": "A-kerber_vorstadt-prodist_m8_bt",
+      "args": [
+        "--network",
+        "kerber_vorstadt",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "prodist_m8_bt"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "A_deterministic_panel",
+      "name": "A-kerber_vorstadt-en50160_envelope",
+      "args": [
+        "--network",
+        "kerber_vorstadt",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "en50160_envelope"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "A_deterministic_panel",
+      "name": "A-simbench_lv_rural1-prodist_m8_bt",
+      "args": [
+        "--network",
+        "simbench_lv_rural1",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "prodist_m8_bt"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "A_deterministic_panel",
+      "name": "A-simbench_lv_rural1-en50160_envelope",
+      "args": [
+        "--network",
+        "simbench_lv_rural1",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "en50160_envelope"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "A_deterministic_panel",
+      "name": "A-simbench_lv_semiurb4-prodist_m8_bt",
+      "args": [
+        "--network",
+        "simbench_lv_semiurb4",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "prodist_m8_bt"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "A_deterministic_panel",
+      "name": "A-simbench_lv_semiurb4-en50160_envelope",
+      "args": [
+        "--network",
+        "simbench_lv_semiurb4",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "en50160_envelope"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "A_deterministic_panel",
+      "name": "A-simbench_lv_urban6-prodist_m8_bt",
+      "args": [
+        "--network",
+        "simbench_lv_urban6",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "prodist_m8_bt"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "A_deterministic_panel",
+      "name": "A-simbench_lv_urban6-en50160_envelope",
+      "args": [
+        "--network",
+        "simbench_lv_urban6",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "en50160_envelope"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "A_deterministic_panel",
+      "name": "A-lv_schutterwald-prodist_m8_bt",
+      "args": [
+        "--network",
+        "lv_schutterwald",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "prodist_m8_bt"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "A_deterministic_panel",
+      "name": "A-lv_schutterwald-en50160_envelope",
+      "args": [
+        "--network",
+        "lv_schutterwald",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "en50160_envelope"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "B_three_phase_uk",
+      "name": "B-offpeak-unbalanced-en50160_envelope-src1.05",
+      "args": [
+        "--network",
+        "ieee_european_lv_offpeak",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "en50160_envelope",
+        "--phase-model",
+        "unbalanced",
+        "--source-vm-pu",
+        "1.05"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "B_three_phase_uk",
+      "name": "B-offpeak-unbalanced-en50160_envelope-src1.00",
+      "args": [
+        "--network",
+        "ieee_european_lv_offpeak",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "en50160_envelope",
+        "--phase-model",
+        "unbalanced",
+        "--source-vm-pu",
+        "1.00"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "B_three_phase_uk",
+      "name": "B-offpeak-unbalanced-prodist_m8_bt-src1.00",
+      "args": [
+        "--network",
+        "ieee_european_lv_offpeak",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "prodist_m8_bt",
+        "--phase-model",
+        "unbalanced",
+        "--source-vm-pu",
+        "1.00"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "B_three_phase_uk",
+      "name": "B-onpeak-unbalanced-prodist-src1.05",
+      "args": [
+        "--network",
+        "ieee_european_lv_onpeak",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "prodist_m8_bt",
+        "--phase-model",
+        "unbalanced",
+        "--source-vm-pu",
+        "1.05"
+      ],
+      "estimate_min": 1,
+      "note": "unbalanced is expected to be baseline_infeasible (1.068 pu without PV)"
+    },
+    {
+      "group": "B_three_phase_uk",
+      "name": "B-offpeak-balanced_equivalent-en50160_envelope-src1.05",
+      "args": [
+        "--network",
+        "ieee_european_lv_offpeak",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "en50160_envelope",
+        "--phase-model",
+        "balanced_equivalent",
+        "--source-vm-pu",
+        "1.05"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "B_three_phase_uk",
+      "name": "B-offpeak-balanced_equivalent-en50160_envelope-src1.00",
+      "args": [
+        "--network",
+        "ieee_european_lv_offpeak",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "en50160_envelope",
+        "--phase-model",
+        "balanced_equivalent",
+        "--source-vm-pu",
+        "1.00"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "B_three_phase_uk",
+      "name": "B-offpeak-balanced_equivalent-prodist_m8_bt-src1.00",
+      "args": [
+        "--network",
+        "ieee_european_lv_offpeak",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "prodist_m8_bt",
+        "--phase-model",
+        "balanced_equivalent",
+        "--source-vm-pu",
+        "1.00"
+      ],
+      "estimate_min": 1
+    },
+    {
+      "group": "B_three_phase_uk",
+      "name": "B-onpeak-balanced_equivalent-prodist-src1.05",
+      "args": [
+        "--network",
+        "ieee_european_lv_onpeak",
+        "--methods",
+        "deterministic",
+        "--framework",
+        "prodist_m8_bt",
+        "--phase-model",
+        "balanced_equivalent",
+        "--source-vm-pu",
+        "1.05"
+      ],
+      "estimate_min": 1,
+      "note": "unbalanced is expected to be baseline_infeasible (1.068 pu without PV)"
+    },
+    {
+      "group": "C_stochastic",
+      "name": "C-cigre_lv-prodist",
+      "args": [
+        "--network",
+        "cigre_lv",
+        "--methods",
+        "stochastic",
+        "--framework",
+        "prodist_m8_bt",
+        "--mc-n-scenarios",
+        "60"
+      ],
+      "estimate_min": 3
+    },
+    {
+      "group": "C_stochastic",
+      "name": "C-kerber_vorstadt-prodist",
+      "args": [
+        "--network",
+        "kerber_vorstadt",
+        "--methods",
+        "stochastic",
+        "--framework",
+        "prodist_m8_bt",
+        "--mc-n-scenarios",
+        "60"
+      ],
+      "estimate_min": 3
+    },
+    {
+      "group": "C_stochastic",
+      "name": "C-lv_schutterwald-prodist",
+      "args": [
+        "--network",
+        "lv_schutterwald",
+        "--methods",
+        "stochastic",
+        "--framework",
+        "prodist_m8_bt",
+        "--mc-n-scenarios",
+        "60"
+      ],
+      "estimate_min": 6
+    },
+    {
+      "group": "C_stochastic",
+      "name": "C-simbench_lv_rural1-prodist",
+      "args": [
+        "--network",
+        "simbench_lv_rural1",
+        "--methods",
+        "stochastic",
+        "--framework",
+        "prodist_m8_bt",
+        "--mc-n-scenarios",
+        "60"
+      ],
+      "estimate_min": 3
+    },
+    {
+      "group": "C_stochastic",
+      "name": "C-simbench_lv_semiurb4-prodist",
+      "args": [
+        "--network",
+        "simbench_lv_semiurb4",
+        "--methods",
+        "stochastic",
+        "--framework",
+        "prodist_m8_bt",
+        "--mc-n-scenarios",
+        "60"
+      ],
+      "estimate_min": 3
+    },
+    {
+      "group": "C_stochastic",
+      "name": "C-simbench_lv_urban6-prodist",
+      "args": [
+        "--network",
+        "simbench_lv_urban6",
+        "--methods",
+        "stochastic",
+        "--framework",
+        "prodist_m8_bt",
+        "--mc-n-scenarios",
+        "60"
+      ],
+      "estimate_min": 3
+    },
+    {
+      "group": "C_stochastic",
+      "name": "C-uk-offpeak-unbalanced-prodist-src1.00",
+      "args": [
+        "--network",
+        "ieee_european_lv_offpeak",
+        "--methods",
+        "stochastic",
+        "--framework",
+        "prodist_m8_bt",
+        "--phase-model",
+        "unbalanced",
+        "--source-vm-pu",
+        "1.00",
+        "--mc-n-scenarios",
+        "60"
+      ],
+      "estimate_min": 5
+    },
+    {
+      "group": "C_stochastic",
+      "name": "C-uk-offpeak-balanced_equivalent-prodist-src1.00",
+      "args": [
+        "--network",
+        "ieee_european_lv_offpeak",
+        "--methods",
+        "stochastic",
+        "--framework",
+        "prodist_m8_bt",
+        "--phase-model",
+        "balanced_equivalent",
+        "--source-vm-pu",
+        "1.00",
+        "--mc-n-scenarios",
+        "60"
+      ],
+      "estimate_min": 5
+    },
+    {
+      "group": "D_simbench_annual",
+      "name": "D-simbench_lv_rural1-tau0",
+      "args": [
+        "--network",
+        "simbench_lv_rural1",
+        "--methods",
+        "deterministic",
+        "stochastic",
+        "qsts",
+        "--framework",
+        "prodist_m8_bt",
+        "--qsts-network-profiles",
+        "--qsts-start",
+        "2016-01-04",
+        "--qsts-days",
+        "357",
+        "--qsts-criterion",
+        "prodist_m8_zero_tolerance",
+        "--critical-point-from-series",
+        "--mc-n-scenarios",
+        "60"
+      ],
+      "estimate_min": 40
+    },
+    {
+      "group": "D_simbench_annual",
+      "name": "D-simbench_lv_rural1-drp-drc",
+      "args": [
+        "--network",
+        "simbench_lv_rural1",
+        "--methods",
+        "qsts",
+        "--qsts-network-profiles",
+        "--qsts-start",
+        "2016-01-04",
+        "--qsts-days",
+        "357",
+        "--qsts-criterion",
+        "prodist_m8_drp_drc"
+      ],
+      "estimate_min": 40
+    },
+    {
+      "group": "D_simbench_annual",
+      "name": "D-simbench_lv_rural1-en50160-weekly",
+      "args": [
+        "--network",
+        "simbench_lv_rural1",
+        "--methods",
+        "qsts",
+        "--qsts-network-profiles",
+        "--qsts-start",
+        "2016-01-04",
+        "--qsts-days",
+        "357",
+        "--qsts-criterion",
+        "en50160_weekly"
+      ],
+      "estimate_min": 40
+    },
+    {
+      "group": "D_simbench_annual",
+      "name": "D-simbench_lv_semiurb4-tau0",
+      "args": [
+        "--network",
+        "simbench_lv_semiurb4",
+        "--methods",
+        "deterministic",
+        "stochastic",
+        "qsts",
+        "--framework",
+        "prodist_m8_bt",
+        "--qsts-network-profiles",
+        "--qsts-start",
+        "2016-01-04",
+        "--qsts-days",
+        "357",
+        "--qsts-criterion",
+        "prodist_m8_zero_tolerance",
+        "--critical-point-from-series",
+        "--mc-n-scenarios",
+        "60"
+      ],
+      "estimate_min": 40
+    },
+    {
+      "group": "D_simbench_annual",
+      "name": "D-simbench_lv_semiurb4-drp-drc",
+      "args": [
+        "--network",
+        "simbench_lv_semiurb4",
+        "--methods",
+        "qsts",
+        "--qsts-network-profiles",
+        "--qsts-start",
+        "2016-01-04",
+        "--qsts-days",
+        "357",
+        "--qsts-criterion",
+        "prodist_m8_drp_drc"
+      ],
+      "estimate_min": 40
+    },
+    {
+      "group": "D_simbench_annual",
+      "name": "D-simbench_lv_semiurb4-en50160-weekly",
+      "args": [
+        "--network",
+        "simbench_lv_semiurb4",
+        "--methods",
+        "qsts",
+        "--qsts-network-profiles",
+        "--qsts-start",
+        "2016-01-04",
+        "--qsts-days",
+        "357",
+        "--qsts-criterion",
+        "en50160_weekly"
+      ],
+      "estimate_min": 40
+    },
+    {
+      "group": "D_simbench_annual",
+      "name": "D-simbench_lv_urban6-tau0",
+      "args": [
+        "--network",
+        "simbench_lv_urban6",
+        "--methods",
+        "deterministic",
+        "stochastic",
+        "qsts",
+        "--framework",
+        "prodist_m8_bt",
+        "--qsts-network-profiles",
+        "--qsts-start",
+        "2016-01-04",
+        "--qsts-days",
+        "357",
+        "--qsts-criterion",
+        "prodist_m8_zero_tolerance",
+        "--critical-point-from-series",
+        "--mc-n-scenarios",
+        "60"
+      ],
+      "estimate_min": 40
+    },
+    {
+      "group": "D_simbench_annual",
+      "name": "D-simbench_lv_urban6-drp-drc",
+      "args": [
+        "--network",
+        "simbench_lv_urban6",
+        "--methods",
+        "qsts",
+        "--qsts-network-profiles",
+        "--qsts-start",
+        "2016-01-04",
+        "--qsts-days",
+        "357",
+        "--qsts-criterion",
+        "prodist_m8_drp_drc"
+      ],
+      "estimate_min": 40
+    },
+    {
+      "group": "D_simbench_annual",
+      "name": "D-simbench_lv_urban6-en50160-weekly",
+      "args": [
+        "--network",
+        "simbench_lv_urban6",
+        "--methods",
+        "qsts",
+        "--qsts-network-profiles",
+        "--qsts-start",
+        "2016-01-04",
+        "--qsts-days",
+        "357",
+        "--qsts-criterion",
+        "en50160_weekly"
+      ],
+      "estimate_min": 40
+    },
+    {
+      "group": "E_sensitivity_simbench",
+      "name": "E-simbench_lv_rural1-drp-drc-hourly",
+      "args": [
+        "--network",
+        "simbench_lv_rural1",
+        "--methods",
+        "qsts",
+        "--qsts-network-profiles",
+        "--qsts-start",
+        "2016-01-04",
+        "--qsts-days",
+        "357",
+        "--qsts-criterion",
+        "prodist_m8_drp_drc",
+        "--qsts-block-average",
+        "60"
+      ],
+      "estimate_min": 40
+    },
+    {
+      "group": "E_sensitivity_simbench",
+      "name": "E-simbench_lv_rural1-drp-drc-aggregated-load",
+      "args": [
+        "--network",
+        "simbench_lv_rural1",
+        "--methods",
+        "qsts",
+        "--qsts-network-profiles",
+        "--qsts-start",
+        "2016-01-04",
+        "--qsts-days",
+        "357",
+        "--qsts-criterion",
+        "prodist_m8_drp_drc",
+        "--qsts-aggregate-load"
+      ],
+      "estimate_min": 40
+    },
+    {
+      "group": "E_sensitivity_simbench",
+      "name": "E-simbench_lv_semiurb4-drp-drc-hourly",
+      "args": [
+        "--network",
+        "simbench_lv_semiurb4",
+        "--methods",
+        "qsts",
+        "--qsts-network-profiles",
+        "--qsts-start",
+        "2016-01-04",
+        "--qsts-days",
+        "357",
+        "--qsts-criterion",
+        "prodist_m8_drp_drc",
+        "--qsts-block-average",
+        "60"
+      ],
+      "estimate_min": 40
+    },
+    {
+      "group": "E_sensitivity_simbench",
+      "name": "E-simbench_lv_semiurb4-drp-drc-aggregated-load",
+      "args": [
+        "--network",
+        "simbench_lv_semiurb4",
+        "--methods",
+        "qsts",
+        "--qsts-network-profiles",
+        "--qsts-start",
+        "2016-01-04",
+        "--qsts-days",
+        "357",
+        "--qsts-criterion",
+        "prodist_m8_drp_drc",
+        "--qsts-aggregate-load"
+      ],
+      "estimate_min": 40
+    },
+    {
+      "group": "E_sensitivity_simbench",
+      "name": "E-simbench_lv_urban6-drp-drc-hourly",
+      "args": [
+        "--network",
+        "simbench_lv_urban6",
+        "--methods",
+        "qsts",
+        "--qsts-network-profiles",
+        "--qsts-start",
+        "2016-01-04",
+        "--qsts-days",
+        "357",
+        "--qsts-criterion",
+        "prodist_m8_drp_drc",
+        "--qsts-block-average",
+        "60"
+      ],
+      "estimate_min": 40
+    },
+    {
+      "group": "E_sensitivity_simbench",
+      "name": "E-simbench_lv_urban6-drp-drc-aggregated-load",
+      "args": [
+        "--network",
+        "simbench_lv_urban6",
+        "--methods",
+        "qsts",
+        "--qsts-network-profiles",
+        "--qsts-start",
+        "2016-01-04",
+        "--qsts-days",
+        "357",
+        "--qsts-criterion",
+        "prodist_m8_drp_drc",
+        "--qsts-aggregate-load"
+      ],
+      "estimate_min": 40
+    },
+    {
+      "group": "F_london_secondary",
+      "name": "F-london-e1-drp-drc",
+      "args": [
+        "--network",
+        "cigre_lv",
+        "--qsts-series",
+        "data/series/london_2018_06.parquet",
+        "--methods",
+        "deterministic",
+        "stochastic",
+        "qsts",
+        "--framework",
+        "prodist_m8_bt",
+        "--qsts-criterion",
+        "prodist_m8_drp_drc",
+        "--critical-point-from-series",
+        "--mc-n-scenarios",
+        "60"
+      ],
+      "estimate_min": 6,
+      "requires": [
+        "data/series/london_2018_06.parquet"
+      ]
+    },
+    {
+      "group": "F_london_secondary",
+      "name": "F-london-tau0",
+      "args": [
+        "--network",
+        "cigre_lv",
+        "--qsts-series",
+        "data/series/london_2018_06.parquet",
+        "--methods",
+        "qsts",
+        "--qsts-criterion",
+        "prodist_m8_zero_tolerance"
+      ],
+      "estimate_min": 6,
+      "requires": [
+        "data/series/london_2018_06.parquet"
+      ]
+    },
+    {
+      "group": "F_london_secondary",
+      "name": "F-london-drp-drc-hourly",
+      "args": [
+        "--network",
+        "cigre_lv",
+        "--qsts-series",
+        "data/series/london_2018_06.parquet",
+        "--methods",
+        "qsts",
+        "--qsts-criterion",
+        "prodist_m8_drp_drc",
+        "--qsts-block-average",
+        "60"
+      ],
+      "estimate_min": 9,
+      "requires": [
+        "data/series/london_2018_06.parquet"
+      ]
+    },
+    {
+      "group": "F_london_secondary",
+      "name": "F-london-en50160-weekly",
+      "args": [
+        "--network",
+        "cigre_lv",
+        "--qsts-series",
+        "data/series/london_2018_06.parquet",
+        "--methods",
+        "qsts",
+        "--qsts-criterion",
+        "en50160_weekly"
+      ],
+      "estimate_min": 6,
+      "requires": [
+        "data/series/london_2018_06.parquet"
+      ]
+    }
+  ]
+}
