@@ -102,3 +102,17 @@ def test_same_data_ordering_holds_with_per_load_profiles() -> None:
     assert q0.lambda_max <= det.lambda_max + 0.011
     with pytest.raises(ValueError, match="one value per load"):
         find_hosting_capacity_deterministic(make_network(key), key, load_multipliers=[1.0, 2.0])
+
+
+def test_aggregated_load_variant_is_marked_in_series_source(tmp_path) -> None:
+    pytest.importorskip("simbench")
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    import run_hosting_capacity_study as study
+
+    out = tmp_path / "hc"
+    study.main(["--network", "simbench_lv_rural1", "--methods", "qsts", "--qsts-network-profiles",
+                "--qsts-days", "7", "--qsts-criterion", "prodist_m8_zero_tolerance", "--qsts-aggregate-load",
+                "--run-label", "t/agg", "--output-dir", str(out)])
+    row = json.loads(pq.read_table(next(out.rglob("*.parquet"))).to_pylist()[0]["raw_value"])
+    assert row["series_source"].endswith("|aggregated_load")
+    assert row["params"]["load_aggregated"] is True and row["params"]["run_label"] == "t/agg"
