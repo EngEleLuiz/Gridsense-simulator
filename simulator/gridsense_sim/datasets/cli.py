@@ -78,6 +78,7 @@ def _cmd_build(args: argparse.Namespace) -> int:
         normalize=args.normalize, n_load_series=args.n_load_series, seed=args.seed,
         load_source_start=args.load_source_start, pv_source_start=args.pv_source_start,
         upsample=args.upsample, allow_quality_errors=args.allow_quality_errors,
+        align_weekday=not args.no_align_weekday,
     )
     path = save_series(real, args.out)
     diag = real.manifest["diagnostics"]
@@ -130,6 +131,8 @@ def build_parser() -> argparse.ArgumentParser:
     pb.add_argument("--pv-source-start")
     pb.add_argument("--upsample", choices=("hold", "linear"), default="hold")
     pb.add_argument("--allow-quality-errors", action="store_true")
+    pb.add_argument("--no-align-weekday", action="store_true",
+                    help="Experiment E4: do not keep the load window on the study's weekdays.")
     pb.add_argument("--out", required=True)
     pb.set_defaults(func=_cmd_build)
     return p
