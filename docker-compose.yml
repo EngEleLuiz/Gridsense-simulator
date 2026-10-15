@@ -16,11 +16,6 @@
 # less trivial than localhost. Docker Compose reads a .env file in
 # this same directory automatically if one exists (gitignored; see
 # .env.example for the variables it can override).
-#
-# Usage:
-#   docker compose up -d      # start Kafka + UI
-#   docker compose logs -f    # tail logs
-#   docker compose down       # stop (add -v to also wipe local data)
 
 services:
   kafka:
@@ -53,7 +48,6 @@ services:
       start_period: 20s
 
   # Optional web UI to browse topics/messages while developing.
-  # Free and open-source; safe to remove if you prefer the CLI tools.
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: gridsense-kafka-ui
@@ -87,7 +81,7 @@ services:
       retries: 10
       start_period: 10s
 
-  # Grafana — dashboards over the Gold marts. Datasource and the
+  # Grafana - dashboards over the Gold marts. Datasource and the
   # GridSense Overview dashboard are auto-provisioned from
   # grafana/provisioning/ and grafana/dashboards/ (no manual
   # click-through setup needed). Free and open-source, self-hosted.
@@ -114,7 +108,7 @@ services:
         condition: service_healthy
 
   # Optional: containerized API. Not started by `docker compose up -d`
-  # by default (profile-gated) -- for local dev, running
+  # by default (profile-gated) - for local dev, running
   # `uvicorn app.main:app --reload` directly is faster to iterate on.
   # Opt in with: docker compose --profile api up -d api
   api:
