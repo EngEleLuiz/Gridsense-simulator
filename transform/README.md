@@ -1,4 +1,4 @@
-# GridSense Transform — dbt Project (Phase 3)
+# GridSense Transform - dbt Project (Phase 3)
 
 Bronze → Silver → Gold transformation layer, built with
 [dbt](https://www.getdbt.com/) against TimescaleDB. This is the
@@ -16,20 +16,20 @@ bronze.raw_events (TimescaleDB hypertable, loaded by ../ingestion/load_bronze_to
 staging.stg_grid_telemetry (view)
     │  scalar fields typed; per-bus/line/gen maps still jsonb
     ▼
-silver.fct_bus_voltage      — one row per bus per step   (hypertable)
-silver.fct_line_loading     — one row per line per step  (hypertable)
-silver.fct_gen_power        — one row per generator/step (hypertable)
-silver.fct_grid_summary     — one row per step, system totals (hypertable)
+silver.fct_bus_voltage      - one row per bus per step   (hypertable)
+silver.fct_line_loading     - one row per line per step  (hypertable)
+silver.fct_gen_power        - one row per generator/step (hypertable)
+silver.fct_grid_summary     - one row per step, system totals (hypertable)
     ▼
-gold.mart_voltage_quality_hourly  — hourly voltage KPIs per bus
-gold.mart_line_loading_hourly     — hourly loading KPIs per line
-gold.mart_grid_kpis_daily         — daily system-level KPIs
+gold.mart_voltage_quality_hourly  - hourly voltage KPIs per bus
+gold.mart_line_loading_hourly     - hourly loading KPIs per line
+gold.mart_grid_kpis_daily         - daily system-level KPIs
 ```
 
 Design notes:
 
 - **Schema-on-read at Bronze, schema-on-write everywhere else.** The
-  raw JSON is never modified upstream of `stg_grid_telemetry` — if the
+  raw JSON is never modified upstream of `stg_grid_telemetry` - if the
   simulator's payload shape changes, only the staging model needs to
   change.
 - **Silver is intentionally "tidy" (long format).** Per-bus and
@@ -50,7 +50,7 @@ Design notes:
 ## Requirements
 
 - Python 3.10+
-- A running TimescaleDB (or plain PostgreSQL) instance — see the root
+- A running TimescaleDB (or plain PostgreSQL) instance - see the root
   `docker-compose.yml`
 - Bronze data already loaded via
   `../ingestion/load_bronze_to_timescale.py` (see the root README)
@@ -97,7 +97,7 @@ make dbt-docs
 rate against the ANSI C84.1 operational tolerance (0.95-1.05 pu). This
 is correct, not a bug: bus 0 is the case14 network's slack bus, fixed
 at its 1.06 pu setpoint by definition. It's a good sanity check that
-the pipeline is calibrated correctly — a slack bus reading exactly its
+the pipeline is calibrated correctly - a slack bus reading exactly its
 setpoint, every step, is exactly what should happen.
 
 ## Project layout
