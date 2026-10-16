@@ -1,4 +1,4 @@
-# GridSense Simulator — Simulation Engine (Phase 1)
+# GridSense Simulator - Simulation Engine (Phase 1)
 
 > This is the simulator sub-project. For the streaming/ingestion layer
 > (Phase 2), see the [root README](../README.md).
@@ -6,7 +6,7 @@
 This is the first runnable piece of the GridSense Simulator project: a
 Python engine that loads an IEEE test power network, applies synthetic
 load/renewable profiles and contingency events, runs an AC power flow
-at every time step, and emits telemetry records — locally, with no
+at every time step, and emits telemetry records - locally, with no
 external infrastructure (no Kafka, no database, no cloud) required.
 
 Everything here is meant to be run and inspected on your own machine
@@ -17,7 +17,7 @@ before we plug in streaming, storage, dashboards, and ML on top of it.
 - Loads an IEEE test network (14/39/57/118-bus) via `pandapower`.
 - Applies a synthetic daily load curve with noise.
 - Applies synthetic solar/wind output curves (used once renewable
-  static generators are added to the network — safe no-op otherwise).
+  static generators are added to the network - safe no-op otherwise).
 - Runs power flow (`pandapower.runpp`) at each simulated step.
 - Optionally triggers scheduled contingencies (e.g. a line outage).
 - Publishes each step's telemetry (bus voltages, line loading,
@@ -112,7 +112,7 @@ simulator/
 
 The engine can now also publish to Kafka via `KafkaPublisher`
 (`gridsense_sim/kafka_publisher.py`), which implements the exact same
-`TelemetryPublisher` interface as the console/file publishers — the
+`TelemetryPublisher` interface as the console/file publishers - the
 simulation engine code did not change at all.
 
 ```bash
