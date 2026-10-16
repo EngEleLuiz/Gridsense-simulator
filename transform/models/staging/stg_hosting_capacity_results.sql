@@ -1,16 +1,6 @@
 {{ config(materialized='view') }}
 
 -- Typed view over bronze.hosting_capacity_results.
---
--- Payload versions
---   v1 (pre-review, no 'schema_version' key): deterministic/QSTS at
---      nominal load with no baseline check, stochastic = budget-bound
---      Monte Carlo (review findings C1, C3, C4). Kept for history, but
---      NEVER comparable.
---   v2 (this review): shared envelope with status, conditions
---      (framework, load_scale), params and provenance; stochastic =
---      F^-1(alpha) of the critical penetration.
---
 -- is_comparable is the single gate every consumer must use:
 --   schema_version >= 2 AND status = 'ok' AND bounded
 --   AND the bisection bracket closed (resolved; absent in early v2 rows)
