@@ -26,22 +26,6 @@
 -- the single source of truth both this model and the Python hosting-
 -- capacity code should stay aligned with; keep them in sync by hand
 -- if the physical limits ever change.
---
--- Voltage scope (review finding R07): only customer service points are
--- judged. Slack, voltage-controlled generator and (in cigre_lv) MV buses
--- are excluded, exactly as hosting_capacity/scope.py does. The list of
--- in-scope buses is the network_voltage_scope seed, generated from the
--- Python rule by scripts/generate_voltage_scope_seed.py and checked by
--- simulator/tests/test_hc_cross_layer.py. Out-of-scope readings are
--- kept (is_in_scope = false) but are never a violation.
---
--- If a network appears in stg_grid_telemetry with no matching row in
--- the seed, network_v_min_pu/network_v_max_pu are NULL for those
--- rows and is_voltage_violation is NULL rather than silently falling
--- back to ANSI Range A -- see
--- transform/tests/assert_all_networks_have_voltage_limits.sql, which
--- fails the test suite loudly in that case instead of letting a new,
--- unregistered network get judged by the wrong tolerance by accident.
 
 with staged as (
 
