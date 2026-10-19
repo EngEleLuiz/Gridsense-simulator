@@ -105,7 +105,7 @@ api/
 └── requirements.txt
 ```
 
-## What's next (Phase 5)
+## Phase 5
 
 Real datasets (ONS load curves, NREL NSRDB/WIND Toolkit) replacing
 the synthetic profiles, plus ML models (forecasting, anomaly
