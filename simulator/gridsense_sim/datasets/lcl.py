@@ -35,8 +35,16 @@ from pathlib import Path
 
 import pandas as pd
 
-from .base import DatasetError, DatasetInfo, ProfileKind, ProfileSet, Site, SourceFile
-from .cache import DataCache
+from .base import (
+    DatasetError,
+    DatasetInfo,
+    ProfileKind,
+    ProfileSet,
+    Site,
+    SourceFile,
+    invalid_file_error,
+)
+from .cache import DataCache, validate_zip
 from .quality import (
     QualityReport,
     clip_negative,
@@ -76,7 +84,11 @@ CHUNK_ROWS = 2_000_000
 
 def _iter_csv_streams(path: Path) -> Iterator[io.TextIOBase]:
     if path.suffix.lower() == ".zip":
-        with zipfile.ZipFile(path) as zf:
+        try:
+            zf = zipfile.ZipFile(path)
+        except zipfile.BadZipFile as exc:
+            raise invalid_file_error("LCL", path, "ZIP archive", exc) from exc
+        with zf:
             for member in sorted(m for m in zf.namelist() if m.lower().endswith(".csv")):
                 with zf.open(member) as fh:
                     yield io.TextIOWrapper(fh, encoding="utf-8", errors="replace")
@@ -195,7 +207,7 @@ def load(
         src = SourceFile.from_path(source_file)
     else:
         cache = cache or DataCache()
-        src = cache.fetch("lcl", "LCL-FullData.zip", [FULL_ZIP_URL])
+        src = cache.fetch("lcl", "LCL-FullData.zip", [FULL_ZIP_URL], validate=validate_zip)
     return parse_lcl(Path(src.path), start, end, tariff, households, max_households, src)
 
 

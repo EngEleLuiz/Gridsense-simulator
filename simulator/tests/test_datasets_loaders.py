@@ -12,6 +12,7 @@ from gridsense_sim.datasets import (
     DataCache,
     DataNotAvailableError,
     DatasetError,
+    InvalidContentError,
     ProfileKind,
     ausgrid,
     inmet,
@@ -74,6 +75,21 @@ def test_inmet_without_header_or_coordinates_fails_clearly(tmp_path) -> None:
     path = fx.write_inmet_headerless(tmp_path / "x.CSV")
     with pytest.raises(DatasetError, match="coordinates"):
         inmet.parse_inmet_csv(path, station="Z999")
+
+
+def test_inmet_html_error_page_is_not_cached_and_bad_cache_is_explained(tmp_path, monkeypatch) -> None:
+    """CR-13: HTTP 200 + HTML instead of the yearly ZIP."""
+    (tmp_path / "inmet_2023.html").write_bytes(b"<html><body>Manutencao</body></html>")
+    monkeypatch.setattr(inmet, "YEAR_ZIP_URL", f"file://{tmp_path}/inmet_{{year}}.html")
+    cache = DataCache(root=tmp_path / "cache", offline=False, retries=1, backoff_s=0)
+    with pytest.raises(DataNotAvailableError, match="not a ZIP"):
+        inmet.load("A806", 2023, cache=cache)
+    assert not cache.path_for("inmet", "2023.zip").exists()
+    # a bad file already in the cache (from before validation existed) -> DatasetError with a hint
+    cached = cache.path_for("inmet", "2023.zip")
+    cached.write_bytes(b"<html><body>Manutencao</body></html>")
+    with pytest.raises(InvalidContentError, match="delete it and its 2023.zip.source.json"):
+        inmet.load("A806", 2023, cache=cache)
 
 
 # ---------------------------------------------------------------- Ausgrid
@@ -212,6 +228,48 @@ def test_pvgis_requires_pv_calculation() -> None:
         r.pop("P")
     with pytest.raises(DatasetError, match="pvcalculation"):
         pvgis.parse_pvgis_json(p)
+
+
+@pytest.mark.parametrize("module", [ausgrid, lcl])
+def test_html_saved_as_zip_is_a_dataset_error(tmp_path, module) -> None:
+    """CR-13: a .zip that is really an HTML page raises InvalidContentError, not BadZipFile."""
+    bad = tmp_path / "data.zip"
+    bad.write_bytes(b"<!DOCTYPE html><html>Not found</html>")
+    with pytest.raises(InvalidContentError, match="not a valid ZIP archive"):
+        module.load(source_file=bad)
+
+
+@pytest.mark.parametrize(("module", "patch", "good"), [
+    (pvgis, "request_urls", fx.pvgis_payload),
+    (nasa_power, "request_url", fx.nasa_power_payload),
+])
+def test_json_apis_reject_error_bodies_and_explain_bad_cache(tmp_path, monkeypatch, module, patch, good) -> None:
+    """CR-13: a 200 response that is HTML or an error JSON is not cached; a bad cached file is explained."""
+    html = tmp_path / "error.html"
+    html.write_bytes(b"<!DOCTYPE html><html>Gateway timeout</html>")
+    error_json = fx.write_json(tmp_path / "error.json", {"message": "Internal error", "status": 500})
+    ok = fx.write_json(tmp_path / "ok.json", good())
+    cache = DataCache(root=tmp_path / "cache", offline=False, retries=1, backoff_s=0)
+    urls = [html.as_uri(), error_json.as_uri()]
+    monkeypatch.setattr(module, patch, (lambda *a: urls) if patch == "request_urls" else (lambda *a: urls[0]))
+    with pytest.raises(DataNotAvailableError, match="rejected"):
+        module.load(cache=cache)
+    if patch == "request_urls":  # PVGIS has mirrors: both bad bodies are rejected, the good one is used
+        urls.append(ok.as_uri())
+        assert module.load(cache=cache).sources[0].url == ok.as_uri()
+    else:
+        urls[0] = error_json.as_uri()
+        with pytest.raises(DataNotAvailableError, match="expected keys"):
+            module.load(cache=cache)
+        urls[0] = ok.as_uri()
+        assert module.load(cache=cache).sources[0].url == ok.as_uri()
+    folder = tmp_path / "cache" / module.INFO.key
+    (cached,) = (p for p in folder.iterdir() if not p.name.endswith(".source.json"))
+    # simulate a corrupt file cached before validation existed (sidecar re-recorded)
+    cached.write_bytes(html.read_bytes())
+    cached.with_name(cached.name + ".source.json").unlink()
+    with pytest.raises(InvalidContentError, match="delete it"):
+        module.load(cache=cache)
 
 
 # --------------------------------------------------------------- SimBench

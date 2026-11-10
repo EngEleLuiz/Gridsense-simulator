@@ -34,7 +34,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .base import DatasetError, DatasetInfo, ProfileKind, ProfileSet, Site, SourceFile
+from .base import (
+    DatasetError,
+    DatasetInfo,
+    ProfileKind,
+    ProfileSet,
+    Site,
+    SourceFile,
+    invalid_file_error,
+)
 from .cache import DataCache
 from .quality import (
     QualityReport,
@@ -119,8 +127,14 @@ def parse_ausgrid(raw: bytes | str | Path, source: SourceFile | None = None) -> 
         path = Path(raw)
         source = source or SourceFile.from_path(path)
         if path.suffix.lower() == ".zip":
-            with zipfile.ZipFile(path) as zf:
-                member = next(m for m in zf.namelist() if m.lower().endswith(".csv"))
+            try:
+                zf = zipfile.ZipFile(path)
+            except zipfile.BadZipFile as exc:
+                raise invalid_file_error("Ausgrid", path, "ZIP archive", exc) from exc
+            with zf:
+                member = next((m for m in zf.namelist() if m.lower().endswith(".csv")), None)
+                if member is None:
+                    raise DatasetError(f"Ausgrid: no CSV inside {path.name}.")
                 raw = zf.read(member)
         else:
             raw = path.read_bytes()

@@ -9,6 +9,9 @@
   an interrupted download never leaves a truncated file in the cache.
 * Several mirror URLs can be given; they are tried in order, each with
   retries and exponential back-off.
+* An optional ``validate`` callable checks the content of a download
+  (e.g. "is a ZIP", "is JSON with these keys") *before* it enters the
+  cache, so an HTTP 200 error page is never cached as data.
 * ``GRIDSENSE_OFFLINE=1`` (or ``offline=True``) forbids network access:
   a missing file raises :class:`DataNotAvailableError` whose message says
   exactly where to put a manually downloaded copy.
@@ -26,11 +29,20 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .base import DataNotAvailableError, DatasetError, SourceFile, sha256_file
+from .base import (
+    DataNotAvailableError,
+    DatasetError,
+    InvalidContentError,
+    SourceFile,
+    head_bytes,
+    sha256_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,8 +116,15 @@ class DataCache:
         filename: str,
         urls: list[str] | tuple[str, ...],
         expected_sha256: str | None = None,
+        validate: Callable[[Path], None] | None = None,
     ) -> SourceFile:
-        """Return the cached file, downloading it from the first working mirror."""
+        """Return the cached file, downloading it from the first working mirror.
+
+        ``validate(path)`` is run on each completed download before it is
+        moved into the cache; it must raise (any exception) if the content
+        is not what the loader expects. A rejected download is deleted and
+        the next mirror is tried.
+        """
         path = self.path_for(dataset, filename)
         hit = self.cached(dataset, filename)
         if hit is not None:
@@ -119,7 +138,10 @@ class DataCache:
         errors: list[str] = []
         for url in urls:
             try:
-                self._download(url, path)
+                self._download(url, path, validate)
+            except InvalidContentError as exc:
+                errors.append(str(exc))
+                continue
             except (urllib.error.URLError, OSError, TimeoutError) as exc:
                 errors.append(f"{url}: {exc}")
                 continue
@@ -132,7 +154,7 @@ class DataCache:
             return SourceFile(str(path), actual, path.stat().st_size, url)
         raise DataNotAvailableError(self._manual_hint(path, urls, "; ".join(errors) or "no URL"))
 
-    def _download(self, url: str, path: Path) -> None:
+    def _download(self, url: str, path: Path, validate: Callable[[Path], None] | None = None) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         part = path.with_name(path.name + ".part")
         last: Exception | None = None
@@ -143,6 +165,7 @@ class DataCache:
                     shutil.copyfileobj(resp, out, length=1 << 20)
                 if part.stat().st_size == 0:
                     raise OSError(f"empty response from {url}")
+                self._check_content(part, url, validate)
                 part.replace(path)
                 logger.info("Downloaded %s -> %s (%d bytes)", url, path, path.stat().st_size)
                 return
@@ -158,6 +181,20 @@ class DataCache:
                 time.sleep(self.backoff_s * 2 ** (attempt - 1))
         assert last is not None
         raise last
+
+    @staticmethod
+    def _check_content(part: Path, url: str, validate: Callable[[Path], None] | None) -> None:
+        """Run ``validate`` on a finished download; reject (and delete) it if it fails."""
+        if validate is None:
+            return
+        try:
+            validate(part)
+        except Exception as exc:  # noqa: BLE001 - any validator failure rejects the file
+            head = head_bytes(part)
+            part.unlink(missing_ok=True)
+            raise InvalidContentError(
+                f"{url}: response rejected, not the expected content ({exc}; starts with {head})"
+            ) from exc
 
     def _write_sidecar(self, path: Path, url: str | None, sha: str, note: str | None = None) -> None:
         meta = {
@@ -181,10 +218,41 @@ class DataCache:
         )
 
 
+def validate_zip(path: Path) -> None:
+    """Validator for :meth:`DataCache.fetch`: the file must be a ZIP archive."""
+    if not zipfile.is_zipfile(path):
+        raise InvalidContentError("not a ZIP archive")
+
+
+def json_validator(*required: str) -> Callable[[Path], None]:
+    """Validator for :meth:`DataCache.fetch`: a JSON object holding the dotted ``required`` keys."""
+
+    def check(path: Path) -> None:
+        try:
+            obj = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise InvalidContentError(f"not JSON ({exc})") from exc
+        missing = []
+        for key in required:
+            node = obj
+            for part in key.split("."):
+                if not isinstance(node, dict) or part not in node:
+                    missing.append(key)
+                    break
+                node = node[part]
+        if missing:
+            raise InvalidContentError(f"JSON without the expected keys {missing}")
+
+    return check
+
+
 def build_url(base: str, params: dict) -> str:
     """URL with sorted, encoded query parameters (stable cache keys)."""
     clean = {k: v for k, v in params.items() if v is not None}
     return f"{base}?{urllib.parse.urlencode(sorted(clean.items()))}"
 
 
-__all__ = ["ChecksumMismatchError", "DataCache", "build_url", "default_root", "offline_by_env"]
+__all__ = [
+    "ChecksumMismatchError", "DataCache", "build_url", "default_root", "json_validator",
+    "offline_by_env", "validate_zip",
+]

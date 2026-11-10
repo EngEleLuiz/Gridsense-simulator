@@ -11,10 +11,11 @@ from _dataset_fixtures import FLO, clear_sky_ghi
 from gridsense_sim.datasets import (
     DataCache,
     DataNotAvailableError,
+    DatasetError,
     ProfileKind,
     ProfileSet,
 )
-from gridsense_sim.datasets.cache import ChecksumMismatchError
+from gridsense_sim.datasets.cache import ChecksumMismatchError, json_validator, validate_zip
 from gridsense_sim.datasets.quality import (
     QualityReport,
     check_irradiance,
@@ -184,3 +185,41 @@ def test_manual_copy_is_accepted_and_hashed(tmp_path) -> None:
     target.write_bytes(b"zip")
     sf = cache.fetch("inmet", "2023.zip", ["https://unreachable.invalid/2023.zip"])
     assert sf.url is None and sf.size_bytes == 3
+
+
+HTML_ERROR_PAGE = b"<!DOCTYPE html><html><body>Service temporarily unavailable</body></html>"
+
+
+def test_cache_rejects_invalid_content_before_caching(tmp_path) -> None:
+    """CR-13: an HTTP 200 error page must never be cached as data."""
+    import zipfile
+
+    html = tmp_path / "error.html"
+    html.write_bytes(HTML_ERROR_PAGE)
+    good = tmp_path / "good.zip"
+    with zipfile.ZipFile(good, "w") as zf:
+        zf.writestr("a.csv", "x\n1\n")
+    cache = DataCache(root=tmp_path / "cache", offline=False, retries=1, backoff_s=0)
+    target = cache.path_for("demo", "2023.zip")
+    with pytest.raises(DataNotAvailableError, match="not a ZIP") as exc:
+        cache.fetch("demo", "2023.zip", [html.as_uri()], validate=validate_zip)
+    assert isinstance(exc.value, DatasetError) and "DOCTYPE" in str(exc.value)
+    assert sorted(p.name for p in target.parent.iterdir()) == []  # no file, .part or sidecar
+    # a mirror with the right content is still used, and the cache works afterwards
+    sf = cache.fetch("demo", "2023.zip", [html.as_uri(), good.as_uri()], validate=validate_zip)
+    assert sf.url == good.as_uri() and zipfile.is_zipfile(target)
+    # without a validator the old behaviour (cache whatever arrived) is kept
+    assert cache.fetch("demo", "raw.bin", [html.as_uri()]).size_bytes == len(HTML_ERROR_PAGE)
+
+
+def test_json_validator_checks_parse_and_nested_keys(tmp_path) -> None:
+    check = json_validator("outputs.hourly", "inputs")
+    ok = tmp_path / "ok.json"
+    ok.write_text(json.dumps({"inputs": {}, "outputs": {"hourly": []}}))
+    check(ok)
+    for body in ('{"message": "bad request", "status": 400}', '{"outputs": 1, "inputs": {}}',
+                 HTML_ERROR_PAGE.decode()):
+        bad = tmp_path / "bad.json"
+        bad.write_text(body)
+        with pytest.raises(DatasetError):
+            check(bad)

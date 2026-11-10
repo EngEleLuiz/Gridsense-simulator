@@ -37,6 +37,26 @@ class DataNotAvailableError(DatasetError):
     """The source file is not cached and cannot be downloaded (offline/blocked)."""
 
 
+class InvalidContentError(DatasetError):
+    """A downloaded or cached file does not have the expected format (e.g. HTML, not ZIP)."""
+
+
+def head_bytes(path: str | Path, n: int = 60) -> str:
+    """First ``n`` bytes of a file, for error messages (an HTML error page shows up here)."""
+    with open(path, "rb") as fh:
+        return repr(fh.read(n))
+
+
+def invalid_file_error(dataset: str, path: str | Path, expected: str, exc: Exception) -> InvalidContentError:
+    """Error for a raw file that cannot be read as ``expected``, telling the user how to recover."""
+    p = Path(path)
+    return InvalidContentError(
+        f"{dataset}: {p} is not a valid {expected} ({type(exc).__name__}: {exc}; starts with "
+        f"{head_bytes(p)}). If it came from the download cache, delete it and its "
+        f"{p.name}.source.json to re-fetch; otherwise replace it with a good copy."
+    )
+
+
 class ProfileKind(str, enum.Enum):
     LOAD_KW = "load_kw"          # active-power demand per series, kW
     PV_KW = "pv_kw"              # PV output per series, kW
@@ -179,6 +199,6 @@ def sha256_file(path: str | Path, chunk: int = 1 << 20) -> str:
 
 
 __all__ = [
-    "DataNotAvailableError", "DatasetError", "DatasetInfo", "ProfileKind", "ProfileSet",
-    "Site", "SourceFile", "sha256_file",
+    "DataNotAvailableError", "DatasetError", "DatasetInfo", "InvalidContentError", "ProfileKind",
+    "ProfileSet", "Site", "SourceFile", "head_bytes", "invalid_file_error", "sha256_file",
 ]
