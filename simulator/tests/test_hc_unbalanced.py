@@ -210,3 +210,42 @@ def test_stochastic_hc_mw_is_the_quantile_of_scenario_totals(off) -> None:
     assert totals[0] <= r.hc_mw <= totals[-1]
     old_formula = r.hc_lambda * n_cust * sum(frac) / 2 / 1000.0
     assert abs(r.hc_mw - old_formula) > 1e-3  # this seed separates the two definitions
+
+
+def test_runner_rejects_pv_scale_on_three_phase_before_any_power_flow(off, tmp_path) -> None:
+    """CR-11: pv_scale was silently dropped on the three-phase path."""
+    from test_hc_duration import _runner_series
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    import run_hosting_capacity_study as study
+
+    path, _ = _runner_series(tmp_path)
+    out = tmp_path / "hc"
+    with pytest.raises(SystemExit, match="pv_scale"):
+        study.main(["--network", OFF, "--methods", "deterministic", "--qsts-series", str(path),
+                    "--critical-point-from-series", "--output-dir", str(out)])
+    assert not out.exists()
+    with pytest.raises(ValueError, match="pv_scale"):
+        study._run_deterministic(off, OFF, {"framework": "en50160_envelope", "pv_scale": 0.8})
+    with pytest.raises(ValueError, match="pv_scale"):
+        study._run_stochastic(off, OFF, {"framework": "en50160_envelope", "pv_scale": 0.8}, 0.1, False)
+
+
+def test_runner_series_critical_point_keeps_phase_model_and_source(tmp_path, monkeypatch) -> None:
+    """CR-11: det_scales was replaced wholesale, dropping phase_model and source_vm_pu."""
+    from test_hc_duration import _runner_series
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    import run_hosting_capacity_study as study
+    from gridsense_sim.hosting_capacity.study_design import CriticalPoint
+
+    path, _ = _runner_series(tmp_path)
+    monkeypatch.setattr(study, "critical_point",
+                        lambda *a, **k: CriticalPoint(0, 0, 1.0, 1.0, "min_load_high_pv", 0.9))
+    out = tmp_path / "hc"
+    study.main(["--network", OFF, "--methods", "deterministic", "--framework", "en50160_envelope",
+                "--qsts-series", str(path), "--critical-point-from-series",
+                "--phase-model", "balanced_equivalent", "--source-vm-pu", "1.0", "--output-dir", str(out)])
+    row = json.loads(pq.read_table(next(out.rglob("*.parquet"))).to_pylist()[0]["raw_value"])
+    assert row["status"] == "ok" and row["phase_model"] == "balanced_equivalent"
+    assert row["source_vm_pu"] == 1.0 and row["params"]["phase_model"] == "balanced_equivalent"
