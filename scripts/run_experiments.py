@@ -12,7 +12,9 @@ Design rules:
   its own output folder. Nothing is computed here that the study runner
   does not compute.
 * A cell is skipped when its ``manifest.json`` already exists with
-  ``returncode == 0``: an interrupted night resumes where it stopped.
+  ``returncode == 0`` *and* records exactly the same cell specification:
+  an interrupted night resumes where it stopped, while a cell whose spec
+  was edited is re-run instead of silently keeping a stale result.
 * Each cell's manifest records the exact command, the SHA-256 of the
   series it used (from the series' own provenance), the git commit, the
   package versions, the wall-clock time and the output file hashes.
@@ -127,12 +129,27 @@ def build_args(cell: dict, out_dir: Path) -> list[str]:
     return args
 
 
+def is_done(manifest_path: Path, cell: dict) -> bool:
+    """True when ``manifest_path`` records a successful run of exactly ``cell``.
+
+    A manifest from an older spec version (different parameters under the
+    same id), a failed run, or an unreadable file all mean "not done".
+    """
+    if not manifest_path.exists():
+        return False
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return manifest.get("returncode") == 0 and manifest.get("cell") == cell
+
+
 def run_cell(cell: dict, base: Path) -> dict:
     cell_dir = base / cell["id"]
     if cell.get("qsts_series") and not (ROOT / cell["qsts_series"]).exists():
         return {"id": cell["id"], "status": f"MISSING series {cell['qsts_series']} (build it first)"}
     manifest_path = cell_dir / "manifest.json"
-    if manifest_path.exists() and json.loads(manifest_path.read_text(encoding="utf-8")).get("returncode") == 0:
+    if is_done(manifest_path, cell):
         return {"id": cell["id"], "status": "skipped (done)"}
     hc_dir = cell_dir / "hc"
     if hc_dir.exists():
@@ -142,6 +159,7 @@ def run_cell(cell: dict, base: Path) -> dict:
     cell_dir.mkdir(parents=True, exist_ok=True)
     args = build_args(cell, hc_dir)
     env = {**os.environ, **THREAD_ENV}
+    started_utc = datetime.now(timezone.utc).isoformat(timespec="seconds")
     t0 = time.time()
     proc = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, env=env, encoding="utf-8",
                           errors="replace", check=False)
@@ -155,7 +173,7 @@ def run_cell(cell: dict, base: Path) -> dict:
         "cell": cell,
         "command": " ".join(args),
         "returncode": proc.returncode,
-        "started_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "started_utc": started_utc,
         "seconds": round(elapsed, 1),
         "git_commit": git_commit(),
         "python": platform.python_version(),
@@ -202,17 +220,45 @@ def read_results(base: Path) -> list[dict]:
                 "binding": payload.get("binding_constraint"),
                 "bounded": payload.get("bounded"),
                 "series_manifest": (params.get("series_manifest_sha256") or payload.get("series_manifest_sha256")),
+                # Operating-point keys used by checks() to pair like with like.
+                "block_average_min": cell_spec.get("block_average_min"),
+                "existing_pv": cell_spec.get("existing_pv") or "remove",
                 "seconds": manifest["seconds"],
             })
     return rows
+
+
+ZERO_TOLERANCE = "prodist_m8_zero_tolerance"
+DURATION = "prodist_m8_drp_drc"
+PRODIST_FRAMEWORK_PREFIX = "prodist"
+
+
+def _operating_point(r: dict) -> tuple:
+    """Keys two results must share to be compared (beyond the series itself)."""
+    return (r.get("block_average_min"), r.get("existing_pv") or "remove")
+
+
+def _label(r: dict) -> str:
+    bits = [r["cell"]]
+    if r.get("block_average_min"):
+        bits.append(f"block {r['block_average_min']} min")
+    if (r.get("existing_pv") or "remove") != "remove":
+        bits.append(f"existing_pv={r['existing_pv']}")
+    return ", ".join(bits)
 
 
 def checks(rows: list[dict], tol: float = 0.011) -> list[str]:
     """Invariants the project tests in code, applied per series (not per cell).
 
     Cells are grouped by the series they read, because the tau = 0 and the
-    duration QSTS are separate cells in the plan. Comparisons are only made
-    between results that share one series (or one SimBench profile set).
+    duration QSTS are separate cells in the plan. Within a series, every
+    result is paired with the counterpart at the same operating point: the
+    same ``block_average_min`` (an hourly-averaged series is a different
+    input from the 10-min one) and the same ``existing_pv`` policy. The
+    deterministic side must use a PRODIST framework, because the tau = 0
+    and DRP/DRC criteria carry PRODIST voltage bands. Every result is
+    checked (not only the first in directory order); a result with no
+    counterpart is reported as ``[SKIP]`` instead of being dropped silently.
     """
     out = []
     by_series: dict[str, list[dict]] = {}
@@ -220,17 +266,30 @@ def checks(rows: list[dict], tol: float = 0.011) -> list[str]:
         if r.get("lambda_max") is not None:
             by_series.setdefault(r.get("series_key", "?"), []).append(r)
     for key, rs in by_series.items():
-        det = [r for r in rs if r["method"] == "deterministic"]
-        zero = [r for r in rs if r["method"] == "qsts" and r.get("criterion") == "prodist_m8_zero_tolerance"]
-        duration = [r for r in rs if r["method"] == "qsts" and r.get("criterion") == "prodist_m8_drp_drc"]
-        if det and zero:
-            ok = zero[0]["lambda_max"] <= det[0]["lambda_max"] + tol
-            out.append(f"[{'PASS' if ok else 'FAIL'}] {key}: QSTS(tau=0) {zero[0]['lambda_max']:.3f} "
-                       f"<= deterministic {det[0]['lambda_max']:.3f}")
-        if zero and duration:
-            ok = duration[0]["lambda_max"] >= zero[0]["lambda_max"] - tol
-            out.append(f"[{'PASS' if ok else 'FAIL'}] {key}: duration {duration[0]['lambda_max']:.3f} "
-                       f">= tau=0 {zero[0]['lambda_max']:.3f}")
+        det = [r for r in rs if r["method"] == "deterministic"
+               and str(r.get("criterion") or "").startswith(PRODIST_FRAMEWORK_PREFIX)]
+        zero = [r for r in rs if r["method"] == "qsts" and r.get("criterion") == ZERO_TOLERANCE]
+        duration = [r for r in rs if r["method"] == "qsts" and r.get("criterion") == DURATION]
+        if det:
+            for z in zero:
+                matches = [d for d in det if _operating_point(d) == _operating_point(z)]
+                if not matches:
+                    out.append(f"[SKIP] {key}: QSTS(tau=0) {_label(z)} has no deterministic "
+                               f"result at the same operating point")
+                for d in matches:
+                    ok = z["lambda_max"] <= d["lambda_max"] + tol
+                    out.append(f"[{'PASS' if ok else 'FAIL'}] {key}: QSTS(tau=0) {z['lambda_max']:.3f} "
+                               f"[{_label(z)}] <= deterministic {d['lambda_max']:.3f} [{_label(d)}]")
+        if zero:
+            for du in duration:
+                matches = [z for z in zero if _operating_point(z) == _operating_point(du)]
+                if not matches:
+                    out.append(f"[SKIP] {key}: duration {_label(du)} has no tau=0 result "
+                               f"at the same operating point")
+                for z in matches:
+                    ok = du["lambda_max"] >= z["lambda_max"] - tol
+                    out.append(f"[{'PASS' if ok else 'FAIL'}] {key}: duration {du['lambda_max']:.3f} "
+                               f"[{_label(du)}] >= tau=0 {z['lambda_max']:.3f} [{_label(z)}]")
     return out
 
 
