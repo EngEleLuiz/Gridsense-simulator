@@ -16,6 +16,17 @@
 # less trivial than localhost. Docker Compose reads a .env file in
 # this same directory automatically if one exists (gitignored; see
 # .env.example for the variables it can override).
+#
+# Every published port is bound to 127.0.0.1 (loopback only): the
+# defaults above are well-known credentials and Kafka is plaintext, so
+# nothing here should be reachable from other machines on the network.
+# Host-side tools (localhost:9092, localhost:5432, the browser) keep
+# working unchanged. To expose a service deliberately -- e.g. to a
+# VM or another host on a trusted LAN -- change its mapping from
+# "127.0.0.1:HOST:CONTAINER" to "HOST:CONTAINER" (or a specific
+# interface IP) AND set non-default credentials in .env first. For
+# Kafka you would also need to change PLAINTEXT_HOST in
+# KAFKA_ADVERTISED_LISTENERS to an address remote clients can resolve.
 
 services:
   kafka:
@@ -23,7 +34,7 @@ services:
     hostname: kafka
     container_name: gridsense-kafka
     ports:
-      - "9092:9092"
+      - "127.0.0.1:9092:9092"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -52,7 +63,7 @@ services:
     image: provectuslabs/kafka-ui:latest
     container_name: gridsense-kafka-ui
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
@@ -67,7 +78,7 @@ services:
     image: timescale/timescaledb:latest-pg16
     container_name: gridsense-timescaledb
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: ${TIMESCALE_USER:-postgres}
       POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-postgres}
@@ -89,7 +100,7 @@ services:
     image: grafana/grafana-oss:latest
     container_name: gridsense-grafana
     ports:
-      - "${GRAFANA_PORT:-3001}:3000"
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
@@ -116,7 +127,7 @@ services:
     container_name: gridsense-api
     profiles: ["api"]
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       TIMESCALE_HOST: timescaledb
       TIMESCALE_PORT: "5432"
