@@ -284,10 +284,20 @@ def _window_search(ev, idx, crit, u0, tol, max_exp, max_bis, baseline_report, sh
         t1 = risk[0]
         probe_k = kinds[0]
         u = 1.0
+        hit = False
         for _ in range(max_exp):
             if _probe(ev, bounds, t1, u)[probe_k]:
+                hit = True
                 break
             u *= 2.0
+        if not hit:
+            # The riskiest step shows no event within max_expansions, so there is no
+            # bracket to bisect (bounds.yes would raise KeyError): the window is
+            # censored at the largest lambda probed (code review, finding 7).
+            stages["bracket"] = ev.power_flows - mark
+            cap = bounds.no.get((t1, probe_k), 0.0)
+            return (weekly_capacity(WeekThresholds(n_readings=n, cap=cap), crit), None), lower, \
+                base_events, ev.power_flows - pf0
         lo1, hi1 = _bisect_threshold(ev, bounds, t1, probe_k, max(tol, 0.05), max_bis)
         u = max(hi1 * 1.5, 4 * tol)
         # Below the riskiest step's first threshold no step can have an event
@@ -356,9 +366,10 @@ def _window_search(ev, idx, crit, u0, tol, max_exp, max_bis, baseline_report, sh
         getattr(th, k).extend(0.0 for _ in night_base[k])
     stages["thresholds"] = ev.power_flows - mark
     outcome = weekly_capacity(th, crit)
-    lam_fail = None
-    if outcome.bounded:
-        lam_fail = brackets.get((outcome.binding, outcome.lambda_max), outcome.lambda_max + tol)
+    # The smallest lambda verified to exceed. Without a bracket for the binding
+    # threshold (e.g. a baseline event at 0) there is none: report None, which
+    # makes the result unresolved, instead of a synthetic lambda_max + tol.
+    lam_fail = brackets.get((outcome.binding, outcome.lambda_max)) if outcome.bounded else None
     return (outcome, lam_fail), lower, base_events, ev.power_flows - pf0
 
 
@@ -479,9 +490,15 @@ def find_hosting_capacity_duration(
     if verify and critical and bounded and lam > 0:
         idx = list(range(critical.index * per_window, (critical.index + 1) * per_window))
         verification = _verify(ev, idx, lam, crit)
-    vals = np.array([r.lambda_max for r in finite]) if finite else np.array([np.nan])
-    quant = {f"p{q}": float(np.nanpercentile(vals, q)) for q in (10, 50, 90)}
-    quant.update({"min": float(np.nanmin(vals)), "max": float(np.nanmax(vals)), "n_windows": len(finite)})
+    # Only windows with an exceedance have a capacity; a window without one
+    # (bounded=False) only gives a lower bound (its search cap) and is counted
+    # as censored instead of entering the quantiles as if it were a capacity.
+    exceeded = [r for r in finite if r.bounded]
+    vals = np.array([r.lambda_max for r in exceeded]) if exceeded else np.array([np.nan])
+    quant = {f"p{q}": float(np.nanpercentile(vals, q)) if exceeded else math.nan for q in (10, 50, 90)}
+    quant.update({"min": float(np.min(vals)) if exceeded else math.nan,
+                  "max": float(np.max(vals)) if exceeded else math.nan,
+                  "n_windows": len(exceeded), "n_windows_censored": len(finite) - len(exceeded)})
     lower_ok = all(r.baseline_lower.get("compliant", True) for r in results)
     alloc = ev.allocation
     pv = alloc.mw_at(lam if math.isfinite(lam) else 0.0)

@@ -200,6 +200,32 @@ def test_isolated_bus_is_baseline_infeasible_as_in_deterministic(cigre) -> None:
         find_hosting_capacity_duration(net, "cigre_lv", _day_series(), DAY)
 
 
+def test_window_without_exceedance_is_censored_not_a_capacity(cigre) -> None:
+    """Finding 7: with no event within max_expansions the threshold bisection raised
+    KeyError (bounds.yes); an unbounded window's cap also entered the quantiles."""
+    r = find_hosting_capacity_duration(cigre, "cigre_lv", _day_series(), DAY, max_expansions=1, verify=False)
+    assert not r.bounded and not r.windows[0].bounded and r.lambda_fail is None
+    q = r.window_lambda_quantiles
+    assert q["n_windows"] == 0 and q["n_windows_censored"] == 1 and math.isnan(q["p50"])
+
+
+def test_lambda_fail_is_none_without_a_bracket(cigre, monkeypatch) -> None:
+    """Finding 7: lambda_fail fell back to a synthetic lambda_max + tol (and resolved=True)."""
+    import dataclasses
+
+    from gridsense_sim.hosting_capacity import qsts_duration
+
+    real = qsts_duration.weekly_capacity
+
+    def shifted(th, crit):  # a binding threshold with no recorded bracket
+        o = real(th, crit)
+        return dataclasses.replace(o, lambda_max=o.lambda_max * 0.5) if o.bounded else o
+
+    monkeypatch.setattr(qsts_duration, "weekly_capacity", shifted)
+    r = find_hosting_capacity_duration(cigre, "cigre_lv", _day_series(), DAY, verify=False)
+    assert r.bounded and r.lambda_fail is None and not r.resolved
+
+
 # --------------------------------------------------------- same-data design
 def test_critical_point_rules() -> None:
     ts = _day_series()
