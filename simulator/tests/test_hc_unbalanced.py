@@ -133,3 +133,38 @@ def test_isolated_customer_is_baseline_infeasible(off) -> None:
         find_hosting_capacity_unbalanced(net, OFF, framework="en50160_envelope")
     with pytest.raises(BaselineInfeasibleError, match=f"isolated@bus_{bus}"):
         estimate_hosting_capacity_unbalanced_stochastic(net, OFF, framework="en50160_envelope", n_scenarios=1)
+
+
+def test_three_phase_customer_pv_follows_its_load(off) -> None:
+    """S-08: argmax put a three-phase customer's whole PV on phase a."""
+    import copy
+
+    import numpy as np
+    from gridsense_sim.hosting_capacity.unbalanced import _Feeder
+
+    net = copy.deepcopy(off)
+    al = net.asymmetric_load
+    al.loc[al.index[0], ["p_a_mw", "p_b_mw", "p_c_mw"]] = [0.002, 0.001, 0.001]  # three-phase, uneven
+    al.loc[al.index[1], ["p_a_mw", "p_b_mw", "p_c_mw"]] = [0.0, 0.0, 0.0]        # no load
+    f = _Feeder(net, OFF, "en50160_envelope", "unbalanced", 1.0, None, None)
+    f.set_pv(np.full(len(al), 4.0))  # 4 kWp each
+    sg = f.net.asymmetric_sgen[["p_a_mw", "p_b_mw", "p_c_mw"]].to_numpy()
+    assert sg[0] == pytest.approx([0.002, 0.001, 0.001])
+    assert sg[1] == pytest.approx([4e-3 / 3] * 3)
+    j = int(np.argmax(np.abs(off.asymmetric_load.iloc[2][["p_a_mw", "p_b_mw", "p_c_mw"]].to_numpy(float))))
+    assert sg[2, j] == pytest.approx(0.004) and sg[2].sum() == pytest.approx(0.004)  # single-phase unchanged
+    assert sg.sum() == pytest.approx(len(al) * 0.004)
+
+
+def test_binding_trafo_label_uses_the_index_label(off) -> None:
+    """S-08: the trafo label was the position (0), not the index label."""
+    import copy
+    import dataclasses
+
+    from gridsense_sim.hosting_capacity.unbalanced import _Feeder
+
+    net = copy.deepcopy(off)
+    net.trafo.index = [7]
+    f = _Feeder(net, OFF, "en50160_envelope", "unbalanced", 1.0, None, None)
+    f.limits = dataclasses.replace(f.limits, max_trafo_loading_percent=1e-6)
+    assert f.violation().startswith("trafo_loading@trafo_7 ")

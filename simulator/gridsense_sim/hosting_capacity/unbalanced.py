@@ -126,8 +126,13 @@ class _Feeder:
         al = n.asymmetric_load
         p = al[["p_a_mw", "p_b_mw", "p_c_mw"]].to_numpy(dtype=float) * load_scale
         q = al[["q_a_mvar", "q_b_mvar", "q_c_mvar"]].to_numpy(dtype=float) * load_scale
-        # customer phase: where its load sits (largest share); ties -> phase a
-        self.phase = np.argmax(np.abs(al[["p_a_mw", "p_b_mw", "p_c_mw"]].to_numpy(dtype=float)), axis=1)
+        # PV follows the customer's load over the phases (code review S-08): a
+        # single-phase customer gets all its PV on its phase, a three-phase one
+        # splits it like its load; a customer without load splits it equally.
+        p_abs = np.abs(al[["p_a_mw", "p_b_mw", "p_c_mw"]].to_numpy(dtype=float))
+        tot = p_abs.sum(axis=1, keepdims=True)
+        self.phase_share = np.where(tot > 0, p_abs / np.where(tot > 0, tot, 1.0), 1.0 / 3.0)
+        self.phase = np.argmax(p_abs, axis=1)  # dominant phase (reporting only)
         if phase_model == "balanced_equivalent":
             p = np.repeat(p.sum(axis=1, keepdims=True) / 3.0, 3, axis=1)
             q = np.repeat(q.sum(axis=1, keepdims=True) / 3.0, 3, axis=1)
@@ -153,7 +158,7 @@ class _Feeder:
                 sg[f"p_{ph}_mw"] = mw / 3.0
         else:
             for j, ph in enumerate(_PH):
-                sg[f"p_{ph}_mw"] = np.where(self.phase == j, mw, 0.0)
+                sg[f"p_{ph}_mw"] = mw * self.phase_share[:, j]
 
     def violation(self) -> str | None:
         self.power_flows += 1
@@ -186,7 +191,8 @@ class _Feeder:
         if len(self.net.trafo):
             tl = self.net.res_trafo_3ph["loading_percent"].to_numpy()
             if np.nanmax(tl) > lim.max_trafo_loading_percent + 1e-9:
-                return f"trafo_loading@trafo_{int(np.nanargmax(tl))} ({np.nanmax(tl):.1f}%)"
+                label = int(self.net.res_trafo_3ph.index[np.nanargmax(tl)])
+                return f"trafo_loading@trafo_{label} ({np.nanmax(tl):.1f}%)"
         ll = self.net.res_line_3ph["loading_percent"].to_numpy()
         if len(ll) and np.nanmax(ll) > lim.max_line_loading_percent + 1e-9:
             return f"line_loading@line_{int(self.net.res_line_3ph.index[np.nanargmax(ll)])} ({np.nanmax(ll):.1f}%)"
@@ -241,8 +247,12 @@ def find_hosting_capacity_unbalanced(
     per_phase = {ph: round(float(f.net.asymmetric_sgen[f"p_{ph}_mw"].sum()), 6) for ph in _PH}
     notes = []
     if phase_model == "unbalanced":
-        counts = np.bincount(f.phase, minlength=3)
-        notes.append("customers per phase a/b/c: " + "/".join(str(int(c)) for c in counts))
+        single = (f.phase_share > 1.0 - 1e-12).any(axis=1)
+        counts = np.bincount(f.phase[single], minlength=3)
+        note = "customers per phase a/b/c: " + "/".join(str(int(c)) for c in counts)
+        if not single.all():
+            note += f" (+{int((~single).sum())} multi-phase, PV split like their load)"
+        notes.append(note)
     return UnbalancedHCResult(
         network_name=network_name, phase_model=phase_model, framework=f.limits.framework,
         lambda_max=lam, lambda_fail=out.lambda_fail, bounded=out.bounded, resolved=out.resolved,
