@@ -60,7 +60,10 @@ services:
 
   # Optional web UI to browse topics/messages while developing.
   kafka-ui:
-    image: provectuslabs/kafka-ui:latest
+    # Pinned: provectuslabs/kafka-ui is no longer maintained and v0.7.2
+    # is its last release. The maintained fork is ghcr.io/kafbat/kafka-ui
+    # (same KAFKA_CLUSTERS_* configuration); switching is a follow-up.
+    image: provectuslabs/kafka-ui:v0.7.2
     container_name: gridsense-kafka-ui
     ports:
       - "127.0.0.1:8080:8080"
@@ -75,7 +78,15 @@ services:
   # warehouse target for the dbt project in transform/. Free and
   # open-source (Apache 2.0 / Timescale License), self-hosted.
   timescaledb:
-    image: timescale/timescaledb:latest-pg16
+    # The tag is a variable, not a hard pin: an existing timescale-data
+    # volume can only be opened by the TimescaleDB version that created it
+    # (or a newer one), so pinning an older tag here would break local
+    # stacks. Pin it in .env to the version your volume uses:
+    #   docker exec gridsense-timescaledb psql -U postgres -d gridsense -tAc \
+    #     "select extversion from pg_extension where extname = 'timescaledb'"
+    #   -> TIMESCALEDB_TAG=<that version>-pg16
+    # CI starts from an empty database and pins its own tag in tests.yml.
+    image: timescale/timescaledb:${TIMESCALEDB_TAG:-latest-pg16}
     container_name: gridsense-timescaledb
     ports:
       - "127.0.0.1:5432:5432"
@@ -97,7 +108,10 @@ services:
   # grafana/provisioning/ and grafana/dashboards/ (no manual
   # click-through setup needed). Free and open-source, self-hosted.
   grafana:
-    image: grafana/grafana-oss:latest
+    # Same reasoning as TIMESCALEDB_TAG: Grafana cannot open a grafana-data
+    # volume written by a newer version. Pin GRAFANA_TAG in .env to the
+    # version you run today (docker exec gridsense-grafana grafana server -v).
+    image: grafana/grafana-oss:${GRAFANA_TAG:-latest}
     container_name: gridsense-grafana
     ports:
       - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
