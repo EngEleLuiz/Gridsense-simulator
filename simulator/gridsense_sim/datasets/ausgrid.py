@@ -161,8 +161,19 @@ def parse_ausgrid(raw: bytes | str | Path, source: SourceFile | None = None) -> 
 
 
 def _wide(long: pd.DataFrame, channels: tuple[str, ...]) -> pd.DataFrame:
+    """Sum ``channels`` per (stamp, customer); a slot with any missing read stays NaN.
+
+    ``pivot_table(aggfunc="sum")`` would turn an all-NaN slot into 0 kW and a
+    slot with one blank channel (e.g. GC missing, CL present) into a partial
+    sum, so missing data would pass the completeness check and bias the
+    series low. A slot is therefore NaN unless every channel row present
+    for it has a value.
+    """
     sub = long[long["channel"].isin(channels)]
-    wide = sub.pivot_table(index="utc", columns="customer", values="kw", aggfunc="sum", dropna=False)
+    grouped = sub.groupby(["utc", "customer"], sort=True)["kw"]
+    total = grouped.sum(min_count=1)
+    total[grouped.count() < grouped.size()] = np.nan
+    wide = total.unstack("customer").sort_index(axis=1)
     wide.columns = [f"c{int(c):03d}" for c in wide.columns]
     wide.index = pd.DatetimeIndex(wide.index).tz_convert("UTC")
     return wide

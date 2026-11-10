@@ -105,6 +105,27 @@ def test_ausgrid_rejects_bad_layout(tmp_path) -> None:
         ausgrid.load(source_file=tmp_path / "bad.csv")
 
 
+def test_ausgrid_blank_day_stays_missing_and_fails_completeness(tmp_path) -> None:
+    """CR-03: a blank GC or GG day must stay NaN, never become 0 kW or a partial sum."""
+    blank = frozenset({(2, "GC", 3), (3, "GG", 5)})
+    path = fx.write_ausgrid(tmp_path / "solar.csv", days=10, blank=blank)
+    long, meta = ausgrid.parse_ausgrid(path)
+    assert long.loc[(long["customer"] == 2) & (long["channel"] == "GC"), "kw"].isna().sum() == 48
+    load_wide = ausgrid._wide(long, ("GC", "CL"))
+    pv_wide = ausgrid._wide(long, ("GG",))
+    assert list(load_wide.columns) == ["c001", "c002", "c003", "c004"]
+    assert load_wide["c002"].isna().sum() == 48  # GC blank, CL present: not a partial sum
+    assert pv_wide["c003"].isna().sum() == 48  # all-NaN slot: not 0 kW
+    assert load_wide.drop(columns="c002").notna().all().all()
+    # one blank day in ten (90 %) is below the 95 % completeness threshold
+    load = ausgrid.build_profile_sets(long, meta, "load")
+    pv = ausgrid.build_profile_sets(long, meta, "pv")
+    assert "c002" not in load.data.columns and "c003" not in pv.data.columns
+    for ps in (load, pv):
+        assert "incomplete_customers_dropped" in {i.code for i in ps.quality.issues}
+        assert ps.data.shape[1] == 3
+
+
 # -------------------------------------------------------------------- LCL
 def test_lcl_utc_duplicates_nulls_and_tariff_filter(tmp_path) -> None:
     path = fx.write_lcl(tmp_path / "lcl.csv")

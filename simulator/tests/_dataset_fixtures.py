@@ -85,8 +85,12 @@ def ausgrid_slot_labels() -> list[str]:
 
 
 def write_ausgrid(path: Path, start: str = "2012-07-01", days: int = 20, customers: int = 4,
-                  dst: bool = True) -> Path:
-    """Title line + header; slot labels are interval ENDS; Sydney wall clock (DST)."""
+                  dst: bool = True, blank: frozenset[tuple[int, str, int]] = frozenset()) -> Path:
+    """Title line + header; slot labels are interval ENDS; Sydney wall clock (DST).
+
+    ``blank`` holds ``(customer, category, day_index)`` rows written with all
+    48 values empty, as seen for missing reads in the real files.
+    """
     labels = ausgrid_slot_labels()
     tz = "Australia/Sydney" if dst else "Etc/GMT-10"
     rows = [
@@ -97,7 +101,7 @@ def write_ausgrid(path: Path, start: str = "2012-07-01", days: int = 20, custome
     rng = np.random.default_rng(3)
     for c in range(1, customers + 1):
         cap = 1.5 + c
-        for d in pd.date_range(start, periods=days, freq="D"):
+        for day, d in enumerate(pd.date_range(start, periods=days, freq="D")):
             local = pd.DatetimeIndex([d + pd.Timedelta(minutes=30 * k) for k in range(48)])
             utc = local.tz_localize(tz, ambiguous=False, nonexistent="shift_forward").tz_convert("UTC")
             pv = interval_mean_cos_zenith(utc, pd.Timedelta("30min"), *SYD) * 0.85 * cap * 0.5  # kWh/30min
@@ -107,8 +111,8 @@ def write_ausgrid(path: Path, start: str = "2012-07-01", days: int = 20, custome
             cl = np.where(hours < 5, 0.6, 0.0)
             quality = "NA" if (c == 1 and d == pd.Timestamp(start)) else ""
             for cat, vals in (("CL", cl), ("GC", gc), ("GG", pv)):
-                rows.append(f"{c},{cap},2076,{cat},{d.day}/{d:%m/%Y}," + ",".join(f"{v:.3f}" for v in vals)
-                            + f",{quality}")
+                cells = [""] * 48 if (c, cat, day) in blank else [f"{v:.3f}" for v in vals]
+                rows.append(f"{c},{cap},2076,{cat},{d.day}/{d:%m/%Y}," + ",".join(cells) + f",{quality}")
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
     return path
 
