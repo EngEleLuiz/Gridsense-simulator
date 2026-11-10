@@ -158,6 +158,7 @@ def _run_stochastic(
         out = _run_unbalanced_stochastic(net, network, {**ukw, "alpha": alpha})
         if not include_scenarios:
             out.pop("critical_lambdas", None)
+            out.pop("n_adopters", None)
         return out
     kw = {k: v for k, v in kw.items() if k not in ("phase_model", "source_vm_pu")}
     est = estimate_hosting_capacity_stochastic(net, network, **kw)
@@ -242,7 +243,8 @@ def _run_unbalanced_stochastic(net: pp.pandapowerNet, network: str, kw: dict) ->
         "hc_lambda_ci_low": _finite(r.hc_lambda_ci_low), "hc_lambda_ci_high": _finite(r.hc_lambda_ci_high),
         "phase_model": r.phase_model, "lambda_unit": r.lambda_unit, "n_scenarios": r.n_scenarios,
         "n_censored": r.n_censored,
-        "critical_lambdas": r.critical_lambdas, "source_vm_pu": r.source_vm_pu, "power_flows": r.power_flows,
+        "hc_mw_ci_low": _finite(r.hc_mw_ci_low), "hc_mw_ci_high": _finite(r.hc_mw_ci_high),
+        "critical_lambdas": r.critical_lambdas, "n_adopters": r.n_adopters, "source_vm_pu": r.source_vm_pu, "power_flows": r.power_flows,
     })
 
 

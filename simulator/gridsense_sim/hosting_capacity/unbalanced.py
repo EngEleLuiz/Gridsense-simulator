@@ -95,10 +95,13 @@ class UnbalancedStochasticResult:
     hc_lambda: float | None
     hc_lambda_ci_low: float | None
     hc_lambda_ci_high: float | None
-    hc_mw: float | None
+    hc_mw: float | None  # alpha quantile of the scenarios' total PV (MW)
+    hc_mw_ci_low: float | None
+    hc_mw_ci_high: float | None
     lambda_unit: str
     n_scenarios: int
     critical_lambdas: list[float]  # inf for a censored scenario
+    n_adopters: list[int]  # adopting customers per scenario
     n_censored: int  # scenarios with no violation up to the expansion cap
     adoption_fraction: tuple[float, float]
     source_vm_pu: float
@@ -285,6 +288,10 @@ def estimate_hosting_capacity_unbalanced_stochastic(
 
     ``hc_lambda`` is the ``alpha`` quantile of the critical kWp per adopting
     customer, with a distribution-free binomial confidence interval.
+    ``hc_mw`` is the ``alpha`` quantile (and CI) of the scenarios' *total*
+    PV, ``lambda*_s * k_s / 1000`` MW with ``k_s`` adopters; the number of
+    adopters varies by scenario, so it is not ``hc_lambda`` times a mean
+    number of adopters (code review CR-08).
     Censored scenarios (no violation up to ``max_expansions`` doublings)
     enter as ``+inf``, as in the balanced estimator (``stochastic.py``):
     quantiles above the censored share then come out as ``inf`` ("not
@@ -301,8 +308,10 @@ def estimate_hosting_capacity_unbalanced_stochastic(
         raise BaselineInfeasibleError(f"Baseline (PV = 0) already violates: {base}.", report=None)
     rng = np.random.default_rng(seed)
     crit: list[float] = []
+    adopters: list[int] = []
     for _ in range(n_scenarios):
         k = max(1, round(rng.uniform(lo, hi) * n_cust))
+        adopters.append(int(k))
         mask = np.zeros(n_cust)
         mask[rng.choice(n_cust, size=k, replace=False)] = 1.0
 
@@ -317,12 +326,17 @@ def estimate_hosting_capacity_unbalanced_stochastic(
         # code review CR-07: the search cap is not a capacity
         crit.append(float(out.lambda_max) if out.bounded else math.inf)
     est = quantile_with_ci(crit, alpha)
-    mean_adopters = None if est.point is None else est.point
+    est_mw = quantile_with_ci([lam * k / 1000.0 for lam, k in zip(crit, adopters)], alpha)
+
+    def _mw(x: float | None) -> float | None:
+        return x if x is None or not math.isfinite(x) else round(x, 6)
+
     return UnbalancedStochasticResult(
         network_name=network_name, phase_model=phase_model, framework=f.limits.framework, alpha=alpha,
         hc_lambda=est.point, hc_lambda_ci_low=est.low, hc_lambda_ci_high=est.high,
-        hc_mw=None if mean_adopters is None else round(est.point * n_cust * (lo + hi) / 2 / 1000.0, 6),
+        hc_mw=_mw(est_mw.point), hc_mw_ci_low=_mw(est_mw.low), hc_mw_ci_high=_mw(est_mw.high),
         lambda_unit="kWp_per_adopting_customer", n_scenarios=n_scenarios, critical_lambdas=crit,
+        n_adopters=adopters,
         n_censored=sum(1 for x in crit if math.isinf(x)),
         adoption_fraction=adoption_fraction, source_vm_pu=f.source_vm, load_scale=load_scale,
         power_flows=f.power_flows, conditions=f.conditions(network_name, framework, load_scale),

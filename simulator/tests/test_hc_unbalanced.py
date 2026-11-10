@@ -185,3 +185,28 @@ def test_censored_scenarios_enter_as_inf_and_are_counted(off) -> None:
     assert row["n_censored"] == 3 and row["bounded"] is False
     assert row["lambda_max"] is None and row["total_pv_mw"] is None
     json.dumps(row, allow_nan=False)  # JSONB-safe
+
+
+def test_stochastic_hc_mw_is_the_quantile_of_scenario_totals(off) -> None:
+    """CR-08: hc_mw was quantile(kWp per adopter) * n_customers * mean adoption,
+    which is not the alpha quantile of total PV. Brute force on a fixed seed."""
+    import numpy as np
+    from gridsense_sim.hosting_capacity.quantiles import quantile_with_ci
+
+    seed, frac, n = 7, (0.1, 1.0), 6
+    r = estimate_hosting_capacity_unbalanced_stochastic(off, OFF, framework="en50160_envelope", n_scenarios=n,
+                                                        alpha=0.5, adoption_fraction=frac, seed=seed, tolerance=0.2)
+    # the adopters per scenario follow the documented RNG sequence
+    rng, n_cust, ks = np.random.default_rng(seed), len(off.asymmetric_load), []
+    for _ in range(n):
+        ks.append(max(1, round(rng.uniform(*frac) * n_cust)))
+        rng.choice(n_cust, size=ks[-1], replace=False)
+    assert r.n_adopters == ks
+    totals = sorted(lam * k / 1000.0 for lam, k in zip(r.critical_lambdas, ks))
+    expected = quantile_with_ci(totals, 0.5)
+    assert r.hc_mw == pytest.approx(expected.point, abs=1e-6)
+    assert r.hc_mw_ci_low == pytest.approx(expected.low, abs=1e-6) if expected.low is not None \
+        else r.hc_mw_ci_low is None
+    assert totals[0] <= r.hc_mw <= totals[-1]
+    old_formula = r.hc_lambda * n_cust * sum(frac) / 2 / 1000.0
+    assert abs(r.hc_mw - old_formula) > 1e-3  # this seed separates the two definitions
