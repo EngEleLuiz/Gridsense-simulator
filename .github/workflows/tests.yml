@@ -3,7 +3,7 @@
 # Jobs (all must pass for the single required check "ci-ok"):
 #   hygiene      merge-conflict markers, CRLF, JSON/YAML, docker compose config
 #   lint         ruff: syntax errors / undefined names block; the rest is advisory
-#   simulator    pytest + coverage on Ubuntu (Py 3.10, 3.12) and Windows (Py 3.12)
+#   simulator    pytest + coverage (floor 80%) on Ubuntu (Py 3.10, 3.12) and Windows (Py 3.12)
 #   ingestion    pytest (Kafka mocked)
 #   api          pytest (DB session mocked)
 #   e2e          simulator -> Bronze -> TimescaleDB -> HC study -> dbt build -> real API
@@ -143,12 +143,16 @@ jobs:
           cache-dependency-path: simulator/pyproject.toml
       - name: Install
         run: pip install -e "simulator[dev,fast]" pytest-cov
+      # Coverage floor: measured at 86% (Linux, py3.12, 2026-11); the floor
+      # sits ~5 points below so platform-specific skips do not trip it, while
+      # a large untested addition or a silently skipped suite does.
       - name: Test
         run: >
           python -m pytest simulator/tests -q -ra --durations=15
           --junitxml=reports/simulator-junit.xml
           --cov=gridsense_sim --cov-report=term-missing:skip-covered
           --cov-report=xml:reports/simulator-coverage.xml
+          --cov-fail-under=80
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v7
