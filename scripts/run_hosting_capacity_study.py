@@ -232,12 +232,16 @@ def _run_unbalanced_stochastic(net: pp.pandapowerNet, network: str, kw: dict) ->
     for k in ("pv_scale", "load_multipliers"):
         kw.pop(k, None)
     r = estimate_hosting_capacity_unbalanced_stochastic(net, network, **kw)
+    # An infinite quantile (censored scenarios) becomes lambda_max = None and
+    # bounded = False, exactly as for the balanced stochastic row (CR-07).
     return _json_safe({
-        "lambda_max": _finite(r.hc_lambda), "lambda_fail": None, "bounded": r.hc_lambda is not None,
-        "resolved": True, "total_pv_mw": r.hc_mw, "binding_constraint": None,
+        "lambda_max": _finite(r.hc_lambda), "lambda_fail": None,
+        "bounded": _finite(r.hc_lambda) is not None,
+        "resolved": True, "total_pv_mw": _finite(r.hc_mw), "binding_constraint": None,
         "conditions": asdict(r.conditions), "alpha": r.alpha,
         "hc_lambda_ci_low": _finite(r.hc_lambda_ci_low), "hc_lambda_ci_high": _finite(r.hc_lambda_ci_high),
         "phase_model": r.phase_model, "lambda_unit": r.lambda_unit, "n_scenarios": r.n_scenarios,
+        "n_censored": r.n_censored,
         "critical_lambdas": r.critical_lambdas, "source_vm_pu": r.source_vm_pu, "power_flows": r.power_flows,
     })
 

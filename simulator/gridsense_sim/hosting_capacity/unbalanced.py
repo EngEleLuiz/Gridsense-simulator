@@ -98,7 +98,8 @@ class UnbalancedStochasticResult:
     hc_mw: float | None
     lambda_unit: str
     n_scenarios: int
-    critical_lambdas: list[float]
+    critical_lambdas: list[float]  # inf for a censored scenario
+    n_censored: int  # scenarios with no violation up to the expansion cap
     adoption_fraction: tuple[float, float]
     source_vm_pu: float
     load_scale: float
@@ -277,12 +278,17 @@ def estimate_hosting_capacity_unbalanced_stochastic(
     adoption_fraction: tuple[float, float] = (0.3, 1.0),
     seed: int | None = 42,
     tolerance: float = 0.05,
+    max_expansions: int = SEARCH_DEFAULTS.max_expansions,
     max_bisections: int = SEARCH_DEFAULTS.max_bisections,
 ) -> UnbalancedStochasticResult:
     """Random adopters (a fraction of customers), equal kWp each; critical kWp per scenario.
 
     ``hc_lambda`` is the ``alpha`` quantile of the critical kWp per adopting
     customer, with a distribution-free binomial confidence interval.
+    Censored scenarios (no violation up to ``max_expansions`` doublings)
+    enter as ``+inf``, as in the balanced estimator (``stochastic.py``):
+    quantiles above the censored share then come out as ``inf`` ("not
+    determined") instead of the search cap.
     """
     lo, hi = adoption_fraction
     if not 0 < lo <= hi <= 1:
@@ -305,10 +311,11 @@ def estimate_hosting_capacity_unbalanced_stochastic(
             return f.violation() is not None
 
         out = bisect_max_feasible(violates, tolerance=tolerance, lambda_start=1.0,
-                                  max_bisections=max_bisections)
+                                  max_expansions=max_expansions, max_bisections=max_bisections)
         if out.bounded and not out.resolved and out.lambda_fail is not None:
             out = bisect_within(violates, out.lambda_max, out.lambda_fail, tolerance=tolerance)
-        crit.append(float(out.lambda_max))
+        # code review CR-07: the search cap is not a capacity
+        crit.append(float(out.lambda_max) if out.bounded else math.inf)
     est = quantile_with_ci(crit, alpha)
     mean_adopters = None if est.point is None else est.point
     return UnbalancedStochasticResult(
@@ -316,6 +323,7 @@ def estimate_hosting_capacity_unbalanced_stochastic(
         hc_lambda=est.point, hc_lambda_ci_low=est.low, hc_lambda_ci_high=est.high,
         hc_mw=None if mean_adopters is None else round(est.point * n_cust * (lo + hi) / 2 / 1000.0, 6),
         lambda_unit="kWp_per_adopting_customer", n_scenarios=n_scenarios, critical_lambdas=crit,
+        n_censored=sum(1 for x in crit if math.isinf(x)),
         adoption_fraction=adoption_fraction, source_vm_pu=f.source_vm, load_scale=load_scale,
         power_flows=f.power_flows, conditions=f.conditions(network_name, framework, load_scale),
     )

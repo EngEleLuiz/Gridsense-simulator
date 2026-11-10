@@ -168,3 +168,20 @@ def test_binding_trafo_label_uses_the_index_label(off) -> None:
     f = _Feeder(net, OFF, "en50160_envelope", "unbalanced", 1.0, None, None)
     f.limits = dataclasses.replace(f.limits, max_trafo_loading_percent=1e-6)
     assert f.violation().startswith("trafo_loading@trafo_7 ")
+
+
+def test_censored_scenarios_enter_as_inf_and_are_counted(off) -> None:
+    """CR-07: a scenario that never violated was recorded as the finite search cap."""
+    import math
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    import run_hosting_capacity_study as study
+
+    kw = {"framework": "en50160_envelope", "n_scenarios": 3, "alpha": 0.5, "max_expansions": 1}
+    r = estimate_hosting_capacity_unbalanced_stochastic(off, OFF, **kw)  # 1 kWp each never violates
+    assert r.n_censored == 3 and all(math.isinf(x) for x in r.critical_lambdas)
+    assert math.isinf(r.hc_lambda)
+    row = study._run_unbalanced_stochastic(off, OFF, kw)
+    assert row["n_censored"] == 3 and row["bounded"] is False
+    assert row["lambda_max"] is None and row["total_pv_mw"] is None
+    json.dumps(row, allow_nan=False)  # JSONB-safe
