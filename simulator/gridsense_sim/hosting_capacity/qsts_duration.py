@@ -51,7 +51,7 @@ import pandapower as pp
 from .allocation import PVAllocation, apply_allocation, proportional_to_load
 from .conditions import StudyConditions
 from .duration import DurationCriterion, WeekThresholds, get_criterion, weekly_capacity
-from .errors import NoDaylightError
+from .errors import BaselineInfeasibleError, NoDaylightError
 from .limits import limits_for
 from .scope import voltage_scope_buses
 from .search import SEARCH_DEFAULTS
@@ -145,19 +145,30 @@ class _Evaluator:
         trafo = self.net.res_trafo["loading_percent"].to_numpy() if len(self.net.trafo) else np.zeros(0)
         return True, vm, np.nan_to_num(line), np.nan_to_num(trafo)
 
+    def isolated(self, vm: np.ndarray) -> list[int]:
+        """Scope buses without a voltage solution (not energized), as in violations.py (R04)."""
+        return [self.scope[i] for i in np.flatnonzero(~np.isfinite(vm))]
+
     def baseline(self, t: int):
         ok, vm, line, trafo = self.solve(t, 0.0)
         if not ok:
             raise RuntimeError(f"Power flow did not converge without PV at step {self.ts.start_step + t}.")
+        isolated = self.isolated(vm)
+        if isolated:  # code review CR-06: NaN voltages must not be skipped by nanmax
+            step = self.ts.start_step + t
+            raise BaselineInfeasibleError(
+                f"Baseline (PV = 0) at step {step} already violates '{self.crit.name}': "
+                f"isolated@bus_{isolated[0]} (not energized).", report=None, step=step)
         self.base_line[t], self.base_trafo[t] = line, trafo
         return vm
 
     def events(self, t: int, lam: float) -> dict[str, bool]:
-        """PV-side events at (t, lam). Non-convergence counts as critical (conservative)."""
+        """PV-side events at (t, lam). Non-convergence and an isolated scope bus
+        count as critical (conservative)."""
         ok, vm, line, trafo = self.solve(t, lam)
-        if not ok:
+        if not ok or self.isolated(vm):
             return {"precarious": True, "critical": True, "thermal": True}
-        vmax = float(np.nanmax(vm))
+        vmax = float(np.max(vm))
         lim_line = self.limits.max_line_loading_percent
         lim_trafo = self.limits.max_trafo_loading_percent
         therm = bool(
@@ -361,7 +372,8 @@ def _verify(ev: _Evaluator, idx, lam: float, crit: DurationCriterion) -> dict:
             rows.append(ev.base_vm[t])
             continue
         ok, vm, _, _ = ev.solve(t, lam)
-        rows.append(vm if ok else np.full(len(ev.scope), np.inf))
+        # non-convergence and isolated buses (NaN) count as critical readings
+        rows.append(np.where(np.isfinite(vm), vm, np.inf) if ok else np.full(len(ev.scope), np.inf))
     vmat = np.vstack(rows)
     any_c = int((vmat.max(axis=1) > crit.critical_hi_pu + _EPS).sum())
     any_p = int((vmat.max(axis=1) > crit.adequate_hi_pu + _EPS).sum()) - any_c

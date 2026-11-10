@@ -119,3 +119,17 @@ def test_runner_records_solver_error_as_error_not_infeasible(off) -> None:
     )
     row = json.loads(records[0]["raw_value"])
     assert row["status"] == "error" and "ValueError" in row["error"]
+
+
+def test_isolated_customer_is_baseline_infeasible(off) -> None:
+    """CR-06: nanmax/nanmin skipped the NaN voltage of a disconnected customer (R04 rule)."""
+    import copy
+
+    net = copy.deepcopy(off)
+    bus = int(net.asymmetric_load["bus"].iloc[0])
+    feeder = net.line.index[(net.line.from_bus == bus) | (net.line.to_bus == bus)][0]
+    net.line.at[feeder, "in_service"] = False
+    with pytest.raises(BaselineInfeasibleError, match=f"isolated@bus_{bus}"):
+        find_hosting_capacity_unbalanced(net, OFF, framework="en50160_envelope")
+    with pytest.raises(BaselineInfeasibleError, match=f"isolated@bus_{bus}"):
+        estimate_hosting_capacity_unbalanced_stochastic(net, OFF, framework="en50160_envelope", n_scenarios=1)

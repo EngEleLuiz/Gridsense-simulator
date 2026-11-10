@@ -187,6 +187,19 @@ def test_per_load_matrix_changes_the_result(cigre) -> None:
     assert low.lambda_max <= base.lambda_max + 1e-9  # less load at midday -> less room for PV
 
 
+def test_isolated_bus_is_baseline_infeasible_as_in_deterministic(cigre) -> None:
+    """CR-06: np.nanmax skipped the NaN voltage of an isolated bus, so opening the
+    line to bus 43 gave a bounded capacity while the deterministic method raises."""
+    import copy
+
+    net = copy.deepcopy(cigre)
+    net.line.at[int(net.line.index[-1]), "in_service"] = False
+    with pytest.raises(BaselineInfeasibleError, match="isolated@bus_43"):
+        find_hosting_capacity_deterministic(net, "cigre_lv", framework="prodist_m8_bt", load_scale=0.5)
+    with pytest.raises(BaselineInfeasibleError, match="isolated@bus_43"):
+        find_hosting_capacity_duration(net, "cigre_lv", _day_series(), DAY)
+
+
 # --------------------------------------------------------- same-data design
 def test_critical_point_rules() -> None:
     ts = _day_series()

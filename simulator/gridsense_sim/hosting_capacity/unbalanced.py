@@ -168,14 +168,20 @@ class _Feeder:
             return "non_convergence"
         r = self.net.res_bus_3ph.loc[self.scope]
         vm = r[["vm_a_pu", "vm_b_pu", "vm_c_pu"]].to_numpy()
+        energized = np.isfinite(vm).all(axis=1)
+        if not energized.all():
+            # A customer bus without a voltage solution is not energized: a violation
+            # that outranks every other one, as in violations.py (R04, code review CR-06).
+            self.last = {}
+            return f"isolated@bus_{self.scope[int(np.flatnonzero(~energized)[0])]} (not energized)"
         vuf = float(np.nanmax(r["unbalance_percent"])) if "unbalance_percent" in r else math.nan
-        self.last = {"vmin": float(np.nanmin(vm)), "vmax": float(np.nanmax(vm)), "vuf": vuf}
+        self.last = {"vmin": float(vm.min()), "vmax": float(vm.max()), "vuf": vuf}
         lim = self.limits
-        if np.nanmax(vm) > lim.v_max_pu + 1e-9:
-            i, j = np.unravel_index(np.nanargmax(vm), vm.shape)
+        if vm.max() > lim.v_max_pu + 1e-9:
+            i, j = np.unravel_index(np.argmax(vm), vm.shape)
             return f"overvoltage@bus_{self.scope[i]}_phase_{_PH[j]} ({vm[i, j]:.4f} pu)"
-        if np.nanmin(vm) < lim.v_min_pu - 1e-9:
-            i, j = np.unravel_index(np.nanargmin(vm), vm.shape)
+        if vm.min() < lim.v_min_pu - 1e-9:
+            i, j = np.unravel_index(np.argmin(vm), vm.shape)
             return f"undervoltage@bus_{self.scope[i]}_phase_{_PH[j]} ({vm[i, j]:.4f} pu)"
         if len(self.net.trafo):
             tl = self.net.res_trafo_3ph["loading_percent"].to_numpy()
