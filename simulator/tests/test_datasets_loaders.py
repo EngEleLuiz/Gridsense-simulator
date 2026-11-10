@@ -188,6 +188,16 @@ def test_lcl_reads_partitioned_zip_and_period(tmp_path) -> None:
         lcl.load(start="2020-01-01", end="2020-02-01", source_file=zpath)
 
 
+def test_lcl_max_households_counts_only_households_with_data_in_the_period(tmp_path) -> None:
+    """S-06: households listed first but without rows in [start, end) must not use up slots."""
+    path = fx.write_lcl(tmp_path / "lcl.csv", households=3, start="2012-01-01", days=2, tou=False)
+    fx.write_lcl(path, households=3, start="2013-03-28", days=6, first_id=3, tou=False, header=False)
+    ps = lcl.load(start="2013-03-28", end="2013-04-03", max_households=2, source_file=path)
+    assert list(ps.data.columns) == ["MAC000003", "MAC000004"]
+    no_period = lcl.load(start=None, end=None, max_households=2, source_file=path)
+    assert list(no_period.data.columns) == ["MAC000000", "MAC000001"]  # file order without a period
+
+
 # ------------------------------------------------------------- NASA POWER
 def test_nasa_power_units_fill_value_and_timing(tmp_path) -> None:
     ps = nasa_power.load(source_file=fx.write_json(tmp_path / "np.json", fx.nasa_power_payload()))

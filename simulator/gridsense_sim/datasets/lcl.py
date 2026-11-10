@@ -115,13 +115,10 @@ def _read_filtered(
                 chunk = chunk[chunk["stdorToU"].str.strip() == tariff]
             ids = chunk["LCLid"].str.strip()
             if households is not None:
-                chunk = chunk[ids.isin(households)]
-            elif max_households is not None:
-                for h in pd.unique(ids):
-                    if h not in seen_set and len(seen) < max_households:
-                        seen.append(h)
-                        seen_set.add(h)
-                chunk = chunk[ids.isin(seen_set)]
+                chunk, ids = chunk[ids.isin(households)], ids[ids.isin(households)]
+            elif max_households is not None and len(seen) >= max_households:
+                # selection complete: drop other households before parsing stamps
+                chunk, ids = chunk[ids.isin(seen_set)], ids[ids.isin(seen_set)]
             if chunk.empty:
                 continue
             ts = pd.to_datetime(chunk["DateTime"].str.strip(), errors="coerce", format="mixed")
@@ -130,6 +127,16 @@ def _read_filtered(
                 keep &= ts >= start
             if end is not None:
                 keep &= ts < end
+            if households is None and max_households is not None:
+                # pick households only among rows inside [start, end): one with no
+                # data in the period must not use up a slot (code review S-06)
+                for h in pd.unique(ids[keep]):
+                    if len(seen) >= max_households:
+                        break
+                    if h not in seen_set:
+                        seen.append(h)
+                        seen_set.add(h)
+                keep &= ids.isin(seen_set)
             sub = chunk.loc[keep]
             if sub.empty:
                 continue

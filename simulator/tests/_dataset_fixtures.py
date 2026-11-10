@@ -118,19 +118,25 @@ def write_ausgrid(path: Path, start: str = "2012-07-01", days: int = 20, custome
 
 
 # ------------------------------------------------------------------ LCL
-def write_lcl(path: Path, households: int = 3, start: str = "2013-03-28", days: int = 6) -> Path:
-    """UTC stamps (incl. 01:00 on the BST start day), duplicates, 'Null', Std/ToU mix."""
-    rows = ["LCLid,stdorToU,DateTime,KWH/hh (per half hour) ,Acorn,Acorn_grouped"]
+def write_lcl(path: Path, households: int = 3, start: str = "2013-03-28", days: int = 6,
+              first_id: int = 0, tou: bool = True, header: bool = True) -> Path:
+    """UTC stamps (incl. 01:00 on the BST start day), duplicates, 'Null', Std/ToU mix.
+
+    ``first_id``/``header=False`` let a test append more households (with a
+    different period) to an existing file, as in the real full release.
+    """
+    rows = ["LCLid,stdorToU,DateTime,KWH/hh (per half hour) ,Acorn,Acorn_grouped"] if header else []
     idx = pd.date_range(start, periods=days * 48, freq="30min")
     for h in range(households):
-        tariff = "ToU" if h == households - 1 else "Std"
+        tariff = "ToU" if (tou and h == households - 1) else "Std"
         for i, t in enumerate(idx):
             v = 0.1 + 0.3 * np.exp(-(((t.hour + t.minute / 60) - 19) ** 2) / 6) + 0.01 * h
             val = "Null" if (h == 0 and i == 50) else f"{v:.3f}"
-            rows.append(f"MAC{h:06d},{tariff},{t:%Y-%m-%d %H:%M:%S}.0000000,{val},ACORN-E,Affluent")
+            rows.append(f"MAC{first_id + h:06d},{tariff},{t:%Y-%m-%d %H:%M:%S}.0000000,{val},ACORN-E,Affluent")
             if h == 0 and i == 10:  # exact duplicate record, as in the real file
                 rows.append(rows[-1])
-    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    with open(path, "a" if not header else "w", encoding="utf-8") as fh:
+        fh.write("\n".join(rows) + "\n")
     return path
 
 
