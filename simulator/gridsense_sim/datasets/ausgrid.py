@@ -247,9 +247,9 @@ def load(
     if source_file is not None:
         src = SourceFile.from_path(source_file)
     else:
-        cache = cache or DataCache()
-        hit = cache.cached("ausgrid", YEAR_FILES[year])
-        src = hit or cache.fetch("ausgrid", Path(YEAR_URLS[year][0]).name, YEAR_URLS[year])
+        # fetch() returns a cached copy if present; with no known URL it raises
+        # DataNotAvailableError explaining where to put a manual download.
+        src = (cache or DataCache()).fetch("ausgrid", YEAR_FILES[year], YEAR_URLS[year])
     long, meta = parse_ausgrid(Path(src.path), src)
     ps = build_profile_sets(long, meta, kind)
     ps.meta["year"] = year

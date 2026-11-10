@@ -9,6 +9,8 @@ import pandas as pd
 import pytest
 from gridsense_sim.datasets import (
     DATASETS,
+    DataCache,
+    DataNotAvailableError,
     DatasetError,
     ProfileKind,
     ausgrid,
@@ -20,6 +22,7 @@ from gridsense_sim.datasets import (
     pvgis,
     simbench_profiles,
 )
+from gridsense_sim.datasets import cli
 from gridsense_sim.datasets.quality import QualityReport, check_solar_alignment
 
 
@@ -103,6 +106,24 @@ def test_ausgrid_rejects_bad_layout(tmp_path) -> None:
     (tmp_path / "bad.csv").write_text("foo,bar\n1,2\n")
     with pytest.raises(DatasetError, match="Customer"):
         ausgrid.load(source_file=tmp_path / "bad.csv")
+
+
+def test_ausgrid_without_file_or_url_raises_manual_download_hint(tmp_path, monkeypatch, capsys) -> None:
+    """CR-12: no cached file and no known URL -> DataNotAvailableError, not IndexError."""
+    monkeypatch.setenv("GRIDSENSE_DATA_DIR", str(tmp_path / "raw"))
+    monkeypatch.delenv("GRIDSENSE_OFFLINE", raising=False)
+    cache = DataCache(offline=False, retries=1, backoff_s=0)
+    with pytest.raises(DataNotAvailableError, match="Download it manually") as exc:
+        ausgrid.load("load", year="2012-2013", cache=cache)
+    assert ausgrid.YEAR_FILES["2012-2013"] in str(exc.value)
+    assert cli.main(["qc", "ausgrid"]) == 2  # DatasetError exit code, no traceback
+    err = capsys.readouterr().err
+    assert err.startswith("error: Raw file not available") and "Traceback" not in err
+    # a manually placed copy under the expected name is then picked up
+    target = cache.path_for("ausgrid", ausgrid.YEAR_FILES["2012-2013"])
+    target.parent.mkdir(parents=True)
+    fx.write_ausgrid(target, days=10)
+    assert ausgrid.load("load", year="2012-2013", cache=cache).data.shape[1] == 4
 
 
 def test_ausgrid_blank_day_stays_missing_and_fails_completeness(tmp_path) -> None:
