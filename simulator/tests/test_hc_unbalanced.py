@@ -86,3 +86,36 @@ def test_runner_three_phase(tmp_path) -> None:
     assert row["params"]["network_country"] == "UK"
     with pytest.raises(SystemExit):
         study.main(["--network", OFF, "--methods", "qsts", "--output-dir", str(out)])
+
+
+# ------------------------------------------------------- code review fixes
+def _corrupt_trafo(net):
+    """Drop the zero-sequence trafo data runpp_3ph needs: a data error, not a physics outcome."""
+    import copy
+
+    bad = copy.deepcopy(net)
+    bad.trafo = bad.trafo.drop(columns=["vk0_percent", "vkr0_percent", "mag0_percent", "mag0_rx",
+                                        "si0_hv_partial"])
+    return bad
+
+
+def test_solver_errors_propagate_instead_of_counting_as_violation(off) -> None:
+    """CR-04: a bare ``except Exception`` turned bad data into ``baseline_infeasible``."""
+    bad = _corrupt_trafo(off)
+    with pytest.raises(ValueError, match="zero sequence"):
+        find_hosting_capacity_unbalanced(bad, OFF, framework="en50160_envelope")
+    with pytest.raises(ValueError, match="zero sequence"):
+        estimate_hosting_capacity_unbalanced_stochastic(bad, OFF, framework="en50160_envelope", n_scenarios=1)
+
+
+def test_runner_records_solver_error_as_error_not_infeasible(off) -> None:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    import run_hosting_capacity_study as study
+
+    records = study.build_records(
+        OFF, ["deterministic"], "run", "ts",
+        deterministic_kwargs={"framework": "en50160_envelope", "load_scale": 1.0},
+        stochastic_kwargs={}, qsts_kwargs={}, network_factory=lambda: _corrupt_trafo(off),
+    )
+    row = json.loads(records[0]["raw_value"])
+    assert row["status"] == "error" and "ValueError" in row["error"]

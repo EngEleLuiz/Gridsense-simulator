@@ -159,7 +159,11 @@ class _Feeder:
         self.power_flows += 1
         try:
             pp.runpp_3ph(self.net)
-        except Exception:  # noqa: BLE001 -- any solver failure counts as a violation (conservative)
+        except pp.LoadflowNotConverged:
+            # Only a genuine non-convergence is a (conservative) violation, as in
+            # violations.run_power_flow. Any other error (bad data, missing
+            # zero-sequence parameters, API change) must propagate so the runner
+            # records status="error" instead of a fake capacity (code review CR-04).
             self.last = {}
             return "non_convergence"
         r = self.net.res_bus_3ph.loc[self.scope]
