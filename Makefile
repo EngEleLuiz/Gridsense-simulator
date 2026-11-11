@@ -17,6 +17,7 @@ DBT_ARGS := --project-dir transform --profiles-dir transform
         load-timescale seed-scope dbt-seed dbt-run dbt-test dbt-build dbt-docs \
         hc-study hc-qsts hc-load api-run \
         data-list data-qc series-flo hc-qsts-real test-datasets test-real-data \
+        test-accel benchmark protocol-v2 \
         test test-simulator test-hc test-ingestion test-api lint
 
 help:
@@ -130,6 +131,16 @@ test-hc: ## Hosting-capacity tests only (~40-80 s)
 
 test-datasets: ## Phase 7 dataset tests (fixtures; offline)
 	$(PYTHON) -m pytest simulator/tests/test_datasets_*.py -q -ra
+
+test-accel: ## Phase 8: batched solver, batched QSTS, plug-ins, BDGD converter
+	$(PYTHON) -m pytest simulator/tests/test_accel_solver.py simulator/tests/test_qsts_batched.py \
+		simulator/tests/test_plugins.py simulator/tests/test_bdgd.py simulator/tests/test_protocol_v2.py -q -ra
+
+benchmark: ## pandapower vs batched solver per power flow (needs PyTorch)
+	$(PYTHON) scripts/benchmark_power_flow.py
+
+protocol-v2: ## Run the accelerated protocol (same runs as v1, batched QSTS)
+	$(PYTHON) scripts/run_protocol.py --protocol protocol/protocol-v2.json
 
 test-real-data: ## Same checks on genuine raw files in $$GRIDSENSE_REAL_DATA_DIR
 	GRIDSENSE_REAL_DATA_DIR=$${GRIDSENSE_REAL_DATA_DIR:-data/raw/real-samples} \
