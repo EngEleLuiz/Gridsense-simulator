@@ -95,10 +95,14 @@ class UnbalancedStochasticResult:
     hc_lambda: float | None
     hc_lambda_ci_low: float | None
     hc_lambda_ci_high: float | None
-    hc_mw: float | None
+    hc_mw: float | None  # alpha quantile of the scenarios' total PV (MW)
+    hc_mw_ci_low: float | None
+    hc_mw_ci_high: float | None
     lambda_unit: str
     n_scenarios: int
-    critical_lambdas: list[float]
+    critical_lambdas: list[float]  # inf for a censored scenario
+    n_adopters: list[int]  # adopting customers per scenario
+    n_censored: int  # scenarios with no violation up to the expansion cap
     adoption_fraction: tuple[float, float]
     source_vm_pu: float
     load_scale: float
@@ -126,8 +130,13 @@ class _Feeder:
         al = n.asymmetric_load
         p = al[["p_a_mw", "p_b_mw", "p_c_mw"]].to_numpy(dtype=float) * load_scale
         q = al[["q_a_mvar", "q_b_mvar", "q_c_mvar"]].to_numpy(dtype=float) * load_scale
-        # customer phase: where its load sits (largest share); ties -> phase a
-        self.phase = np.argmax(np.abs(al[["p_a_mw", "p_b_mw", "p_c_mw"]].to_numpy(dtype=float)), axis=1)
+        # PV follows the customer's load over the phases (code review S-08): a
+        # single-phase customer gets all its PV on its phase, a three-phase one
+        # splits it like its load; a customer without load splits it equally.
+        p_abs = np.abs(al[["p_a_mw", "p_b_mw", "p_c_mw"]].to_numpy(dtype=float))
+        tot = p_abs.sum(axis=1, keepdims=True)
+        self.phase_share = np.where(tot > 0, p_abs / np.where(tot > 0, tot, 1.0), 1.0 / 3.0)
+        self.phase = np.argmax(p_abs, axis=1)  # dominant phase (reporting only)
         if phase_model == "balanced_equivalent":
             p = np.repeat(p.sum(axis=1, keepdims=True) / 3.0, 3, axis=1)
             q = np.repeat(q.sum(axis=1, keepdims=True) / 3.0, 3, axis=1)
@@ -153,30 +162,41 @@ class _Feeder:
                 sg[f"p_{ph}_mw"] = mw / 3.0
         else:
             for j, ph in enumerate(_PH):
-                sg[f"p_{ph}_mw"] = np.where(self.phase == j, mw, 0.0)
+                sg[f"p_{ph}_mw"] = mw * self.phase_share[:, j]
 
     def violation(self) -> str | None:
         self.power_flows += 1
         try:
             pp.runpp_3ph(self.net)
-        except Exception:  # noqa: BLE001 -- any solver failure counts as a violation (conservative)
+        except pp.LoadflowNotConverged:
+            # Only a genuine non-convergence is a (conservative) violation, as in
+            # violations.run_power_flow. Any other error (bad data, missing
+            # zero-sequence parameters, API change) must propagate so the runner
+            # records status="error" instead of a fake capacity (code review CR-04).
             self.last = {}
             return "non_convergence"
         r = self.net.res_bus_3ph.loc[self.scope]
         vm = r[["vm_a_pu", "vm_b_pu", "vm_c_pu"]].to_numpy()
+        energized = np.isfinite(vm).all(axis=1)
+        if not energized.all():
+            # A customer bus without a voltage solution is not energized: a violation
+            # that outranks every other one, as in violations.py (R04, code review CR-06).
+            self.last = {}
+            return f"isolated@bus_{self.scope[int(np.flatnonzero(~energized)[0])]} (not energized)"
         vuf = float(np.nanmax(r["unbalance_percent"])) if "unbalance_percent" in r else math.nan
-        self.last = {"vmin": float(np.nanmin(vm)), "vmax": float(np.nanmax(vm)), "vuf": vuf}
+        self.last = {"vmin": float(vm.min()), "vmax": float(vm.max()), "vuf": vuf}
         lim = self.limits
-        if np.nanmax(vm) > lim.v_max_pu + 1e-9:
-            i, j = np.unravel_index(np.nanargmax(vm), vm.shape)
+        if vm.max() > lim.v_max_pu + 1e-9:
+            i, j = np.unravel_index(np.argmax(vm), vm.shape)
             return f"overvoltage@bus_{self.scope[i]}_phase_{_PH[j]} ({vm[i, j]:.4f} pu)"
-        if np.nanmin(vm) < lim.v_min_pu - 1e-9:
-            i, j = np.unravel_index(np.nanargmin(vm), vm.shape)
+        if vm.min() < lim.v_min_pu - 1e-9:
+            i, j = np.unravel_index(np.argmin(vm), vm.shape)
             return f"undervoltage@bus_{self.scope[i]}_phase_{_PH[j]} ({vm[i, j]:.4f} pu)"
         if len(self.net.trafo):
             tl = self.net.res_trafo_3ph["loading_percent"].to_numpy()
             if np.nanmax(tl) > lim.max_trafo_loading_percent + 1e-9:
-                return f"trafo_loading@trafo_{int(np.nanargmax(tl))} ({np.nanmax(tl):.1f}%)"
+                label = int(self.net.res_trafo_3ph.index[np.nanargmax(tl)])
+                return f"trafo_loading@trafo_{label} ({np.nanmax(tl):.1f}%)"
         ll = self.net.res_line_3ph["loading_percent"].to_numpy()
         if len(ll) and np.nanmax(ll) > lim.max_line_loading_percent + 1e-9:
             return f"line_loading@line_{int(self.net.res_line_3ph.index[np.nanargmax(ll)])} ({np.nanmax(ll):.1f}%)"
@@ -231,8 +251,12 @@ def find_hosting_capacity_unbalanced(
     per_phase = {ph: round(float(f.net.asymmetric_sgen[f"p_{ph}_mw"].sum()), 6) for ph in _PH}
     notes = []
     if phase_model == "unbalanced":
-        counts = np.bincount(f.phase, minlength=3)
-        notes.append("customers per phase a/b/c: " + "/".join(str(int(c)) for c in counts))
+        single = (f.phase_share > 1.0 - 1e-12).any(axis=1)
+        counts = np.bincount(f.phase[single], minlength=3)
+        note = "customers per phase a/b/c: " + "/".join(str(int(c)) for c in counts)
+        if not single.all():
+            note += f" (+{int((~single).sum())} multi-phase, PV split like their load)"
+        notes.append(note)
     return UnbalancedHCResult(
         network_name=network_name, phase_model=phase_model, framework=f.limits.framework,
         lambda_max=lam, lambda_fail=out.lambda_fail, bounded=out.bounded, resolved=out.resolved,
@@ -257,12 +281,21 @@ def estimate_hosting_capacity_unbalanced_stochastic(
     adoption_fraction: tuple[float, float] = (0.3, 1.0),
     seed: int | None = 42,
     tolerance: float = 0.05,
+    max_expansions: int = SEARCH_DEFAULTS.max_expansions,
     max_bisections: int = SEARCH_DEFAULTS.max_bisections,
 ) -> UnbalancedStochasticResult:
     """Random adopters (a fraction of customers), equal kWp each; critical kWp per scenario.
 
     ``hc_lambda`` is the ``alpha`` quantile of the critical kWp per adopting
     customer, with a distribution-free binomial confidence interval.
+    ``hc_mw`` is the ``alpha`` quantile (and CI) of the scenarios' *total*
+    PV, ``lambda*_s * k_s / 1000`` MW with ``k_s`` adopters; the number of
+    adopters varies by scenario, so it is not ``hc_lambda`` times a mean
+    number of adopters (code review CR-08).
+    Censored scenarios (no violation up to ``max_expansions`` doublings)
+    enter as ``+inf``, as in the balanced estimator (``stochastic.py``):
+    quantiles above the censored share then come out as ``inf`` ("not
+    determined") instead of the search cap.
     """
     lo, hi = adoption_fraction
     if not 0 < lo <= hi <= 1:
@@ -275,8 +308,10 @@ def estimate_hosting_capacity_unbalanced_stochastic(
         raise BaselineInfeasibleError(f"Baseline (PV = 0) already violates: {base}.", report=None)
     rng = np.random.default_rng(seed)
     crit: list[float] = []
+    adopters: list[int] = []
     for _ in range(n_scenarios):
         k = max(1, round(rng.uniform(lo, hi) * n_cust))
+        adopters.append(int(k))
         mask = np.zeros(n_cust)
         mask[rng.choice(n_cust, size=k, replace=False)] = 1.0
 
@@ -285,17 +320,24 @@ def estimate_hosting_capacity_unbalanced_stochastic(
             return f.violation() is not None
 
         out = bisect_max_feasible(violates, tolerance=tolerance, lambda_start=1.0,
-                                  max_bisections=max_bisections)
+                                  max_expansions=max_expansions, max_bisections=max_bisections)
         if out.bounded and not out.resolved and out.lambda_fail is not None:
             out = bisect_within(violates, out.lambda_max, out.lambda_fail, tolerance=tolerance)
-        crit.append(float(out.lambda_max))
+        # code review CR-07: the search cap is not a capacity
+        crit.append(float(out.lambda_max) if out.bounded else math.inf)
     est = quantile_with_ci(crit, alpha)
-    mean_adopters = None if est.point is None else est.point
+    est_mw = quantile_with_ci([lam * k / 1000.0 for lam, k in zip(crit, adopters)], alpha)
+
+    def _mw(x: float | None) -> float | None:
+        return x if x is None or not math.isfinite(x) else round(x, 6)
+
     return UnbalancedStochasticResult(
         network_name=network_name, phase_model=phase_model, framework=f.limits.framework, alpha=alpha,
         hc_lambda=est.point, hc_lambda_ci_low=est.low, hc_lambda_ci_high=est.high,
-        hc_mw=None if mean_adopters is None else round(est.point * n_cust * (lo + hi) / 2 / 1000.0, 6),
+        hc_mw=_mw(est_mw.point), hc_mw_ci_low=_mw(est_mw.low), hc_mw_ci_high=_mw(est_mw.high),
         lambda_unit="kWp_per_adopting_customer", n_scenarios=n_scenarios, critical_lambdas=crit,
+        n_adopters=adopters,
+        n_censored=sum(1 for x in crit if math.isinf(x)),
         adoption_fraction=adoption_fraction, source_vm_pu=f.source_vm, load_scale=load_scale,
         power_flows=f.power_flows, conditions=f.conditions(network_name, framework, load_scale),
     )

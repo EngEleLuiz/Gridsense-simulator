@@ -130,8 +130,22 @@ def _envelope(method: str, network: str, params: dict[str, Any], provenance: dic
     }
 
 
+def _reject_unsupported_three_phase(kw: dict) -> None:
+    """The three-phase path has no PV output scale and no per-load operating point.
+
+    Silently dropping them (as before code review CR-11) reported an HC at
+    full PV output while the params claimed a series operating point.
+    """
+    if kw.get("pv_scale", 1.0) != 1.0:
+        raise ValueError(f"pv_scale={kw['pv_scale']} is not supported for three-phase networks "
+                         "(--critical-point-from-series needs a balanced network).")
+    if kw.get("load_multipliers") is not None:
+        raise ValueError("Per-load multipliers are not supported for three-phase networks.")
+
+
 def _run_deterministic(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
     if is_unbalanced_network(net):  # Phase 7.4: single-phase customers -> three-phase path
+        _reject_unsupported_three_phase(kw)
         ukw = {k: v for k, v in kw.items() if k not in ("pv_scale", "load_multipliers", "pv_power_factor")}
         return _run_unbalanced_deterministic(net, network, ukw)
     kw = {k: v for k, v in kw.items() if k not in ("phase_model", "source_vm_pu")}
@@ -158,6 +172,7 @@ def _run_stochastic(
         out = _run_unbalanced_stochastic(net, network, {**ukw, "alpha": alpha})
         if not include_scenarios:
             out.pop("critical_lambdas", None)
+            out.pop("n_adopters", None)
         return out
     kw = {k: v for k, v in kw.items() if k not in ("phase_model", "source_vm_pu")}
     est = estimate_hosting_capacity_stochastic(net, network, **kw)
@@ -225,6 +240,7 @@ def _run_unbalanced_deterministic(net: pp.pandapowerNet, network: str, kw: dict)
 
 def _run_unbalanced_stochastic(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
     """Phase 7.4: three-phase stochastic (random single-phase adopters)."""
+    _reject_unsupported_three_phase(kw)
     kw = dict(kw)
     model = kw.pop("adoption_model", None)
     if model is not None:
@@ -232,13 +248,18 @@ def _run_unbalanced_stochastic(net: pp.pandapowerNet, network: str, kw: dict) ->
     for k in ("pv_scale", "load_multipliers"):
         kw.pop(k, None)
     r = estimate_hosting_capacity_unbalanced_stochastic(net, network, **kw)
+    # An infinite quantile (censored scenarios) becomes lambda_max = None and
+    # bounded = False, exactly as for the balanced stochastic row (CR-07).
     return _json_safe({
-        "lambda_max": _finite(r.hc_lambda), "lambda_fail": None, "bounded": r.hc_lambda is not None,
-        "resolved": True, "total_pv_mw": r.hc_mw, "binding_constraint": None,
+        "lambda_max": _finite(r.hc_lambda), "lambda_fail": None,
+        "bounded": _finite(r.hc_lambda) is not None,
+        "resolved": True, "total_pv_mw": _finite(r.hc_mw), "binding_constraint": None,
         "conditions": asdict(r.conditions), "alpha": r.alpha,
         "hc_lambda_ci_low": _finite(r.hc_lambda_ci_low), "hc_lambda_ci_high": _finite(r.hc_lambda_ci_high),
         "phase_model": r.phase_model, "lambda_unit": r.lambda_unit, "n_scenarios": r.n_scenarios,
-        "critical_lambdas": r.critical_lambdas, "source_vm_pu": r.source_vm_pu, "power_flows": r.power_flows,
+        "n_censored": r.n_censored,
+        "hc_mw_ci_low": _finite(r.hc_mw_ci_low), "hc_mw_ci_high": _finite(r.hc_mw_ci_high),
+        "critical_lambdas": r.critical_lambdas, "n_adopters": r.n_adopters, "source_vm_pu": r.source_vm_pu, "power_flows": r.power_flows,
     })
 
 
@@ -645,19 +666,25 @@ def main(argv: list[str] | None = None) -> None:
             cp = critical_point(own_ts, args.critical_point_rule, args.critical_point_pv_fraction)
             # Per-load state of the critical step: the snapshot sees exactly the load
             # distribution the QSTS sees at that step (load_scale 1.0 on top of it).
-            det_scales = {"load_scale": 1.0, "pv_scale": cp.pv_mult,
-                          "load_multipliers": own_matrix[cp.step].tolist()}
+            det_scales.update({"load_scale": 1.0, "pv_scale": cp.pv_mult,
+                               "load_multipliers": own_matrix[cp.step].tolist()})
             snapshot_info = {"critical_point": cp.to_dict(), "network_profiles": own_info,
                              "per_load_operating_point": True}
     if args.critical_point_from_series and real is not None:
         cp = critical_point(real.series, args.critical_point_rule, args.critical_point_pv_fraction)
-        det_scales = {"load_scale": cp.load_mult, "pv_scale": cp.pv_mult}
+        # update, not replace: keep phase_model/source_vm_pu (code review CR-11)
+        det_scales.update({"load_scale": cp.load_mult, "pv_scale": cp.pv_mult})
         snapshot_info = {"critical_point": cp.to_dict(),
                          "critical_point_local_time": str(real.local_index[cp.step]),
                          "series_path": str(args.qsts_series),
                          "series_manifest_sha256": real.manifest_sha256}
         logger.info("Snapshot operating point from series: step %d (%s), load %.3f, pv %.3f",
                     cp.step, real.local_index[cp.step], cp.load_mult, cp.pv_mult)
+    if three_phase:
+        try:  # fail before any power flow, not per method after the network is built
+            _reject_unsupported_three_phase(det_scales)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from None
     if real is not None and "qsts" in args.methods:
         qsts_series = real.series
         if args.qsts_block_average:

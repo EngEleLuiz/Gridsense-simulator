@@ -86,3 +86,166 @@ def test_runner_three_phase(tmp_path) -> None:
     assert row["params"]["network_country"] == "UK"
     with pytest.raises(SystemExit):
         study.main(["--network", OFF, "--methods", "qsts", "--output-dir", str(out)])
+
+
+# ------------------------------------------------------- code review fixes
+def _corrupt_trafo(net):
+    """Drop the zero-sequence trafo data runpp_3ph needs: a data error, not a physics outcome."""
+    import copy
+
+    bad = copy.deepcopy(net)
+    bad.trafo = bad.trafo.drop(columns=["vk0_percent", "vkr0_percent", "mag0_percent", "mag0_rx",
+                                        "si0_hv_partial"])
+    return bad
+
+
+def test_solver_errors_propagate_instead_of_counting_as_violation(off) -> None:
+    """CR-04: a bare ``except Exception`` turned bad data into ``baseline_infeasible``."""
+    bad = _corrupt_trafo(off)
+    with pytest.raises(ValueError, match="zero sequence"):
+        find_hosting_capacity_unbalanced(bad, OFF, framework="en50160_envelope")
+    with pytest.raises(ValueError, match="zero sequence"):
+        estimate_hosting_capacity_unbalanced_stochastic(bad, OFF, framework="en50160_envelope", n_scenarios=1)
+
+
+def test_runner_records_solver_error_as_error_not_infeasible(off) -> None:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    import run_hosting_capacity_study as study
+
+    records = study.build_records(
+        OFF, ["deterministic"], "run", "ts",
+        deterministic_kwargs={"framework": "en50160_envelope", "load_scale": 1.0},
+        stochastic_kwargs={}, qsts_kwargs={}, network_factory=lambda: _corrupt_trafo(off),
+    )
+    row = json.loads(records[0]["raw_value"])
+    assert row["status"] == "error" and "ValueError" in row["error"]
+
+
+def test_isolated_customer_is_baseline_infeasible(off) -> None:
+    """CR-06: nanmax/nanmin skipped the NaN voltage of a disconnected customer (R04 rule)."""
+    import copy
+
+    net = copy.deepcopy(off)
+    bus = int(net.asymmetric_load["bus"].iloc[0])
+    feeder = net.line.index[(net.line.from_bus == bus) | (net.line.to_bus == bus)][0]
+    net.line.at[feeder, "in_service"] = False
+    with pytest.raises(BaselineInfeasibleError, match=f"isolated@bus_{bus}"):
+        find_hosting_capacity_unbalanced(net, OFF, framework="en50160_envelope")
+    with pytest.raises(BaselineInfeasibleError, match=f"isolated@bus_{bus}"):
+        estimate_hosting_capacity_unbalanced_stochastic(net, OFF, framework="en50160_envelope", n_scenarios=1)
+
+
+def test_three_phase_customer_pv_follows_its_load(off) -> None:
+    """S-08: argmax put a three-phase customer's whole PV on phase a."""
+    import copy
+
+    import numpy as np
+    from gridsense_sim.hosting_capacity.unbalanced import _Feeder
+
+    net = copy.deepcopy(off)
+    al = net.asymmetric_load
+    al.loc[al.index[0], ["p_a_mw", "p_b_mw", "p_c_mw"]] = [0.002, 0.001, 0.001]  # three-phase, uneven
+    al.loc[al.index[1], ["p_a_mw", "p_b_mw", "p_c_mw"]] = [0.0, 0.0, 0.0]        # no load
+    f = _Feeder(net, OFF, "en50160_envelope", "unbalanced", 1.0, None, None)
+    f.set_pv(np.full(len(al), 4.0))  # 4 kWp each
+    sg = f.net.asymmetric_sgen[["p_a_mw", "p_b_mw", "p_c_mw"]].to_numpy()
+    assert sg[0] == pytest.approx([0.002, 0.001, 0.001])
+    assert sg[1] == pytest.approx([4e-3 / 3] * 3)
+    j = int(np.argmax(np.abs(off.asymmetric_load.iloc[2][["p_a_mw", "p_b_mw", "p_c_mw"]].to_numpy(float))))
+    assert sg[2, j] == pytest.approx(0.004) and sg[2].sum() == pytest.approx(0.004)  # single-phase unchanged
+    assert sg.sum() == pytest.approx(len(al) * 0.004)
+
+
+def test_binding_trafo_label_uses_the_index_label(off) -> None:
+    """S-08: the trafo label was the position (0), not the index label."""
+    import copy
+    import dataclasses
+
+    from gridsense_sim.hosting_capacity.unbalanced import _Feeder
+
+    net = copy.deepcopy(off)
+    net.trafo.index = [7]
+    f = _Feeder(net, OFF, "en50160_envelope", "unbalanced", 1.0, None, None)
+    f.limits = dataclasses.replace(f.limits, max_trafo_loading_percent=1e-6)
+    assert f.violation().startswith("trafo_loading@trafo_7 ")
+
+
+def test_censored_scenarios_enter_as_inf_and_are_counted(off) -> None:
+    """CR-07: a scenario that never violated was recorded as the finite search cap."""
+    import math
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    import run_hosting_capacity_study as study
+
+    kw = {"framework": "en50160_envelope", "n_scenarios": 3, "alpha": 0.5, "max_expansions": 1}
+    r = estimate_hosting_capacity_unbalanced_stochastic(off, OFF, **kw)  # 1 kWp each never violates
+    assert r.n_censored == 3 and all(math.isinf(x) for x in r.critical_lambdas)
+    assert math.isinf(r.hc_lambda)
+    row = study._run_unbalanced_stochastic(off, OFF, kw)
+    assert row["n_censored"] == 3 and row["bounded"] is False
+    assert row["lambda_max"] is None and row["total_pv_mw"] is None
+    json.dumps(row, allow_nan=False)  # JSONB-safe
+
+
+def test_stochastic_hc_mw_is_the_quantile_of_scenario_totals(off) -> None:
+    """CR-08: hc_mw was quantile(kWp per adopter) * n_customers * mean adoption,
+    which is not the alpha quantile of total PV. Brute force on a fixed seed."""
+    import numpy as np
+    from gridsense_sim.hosting_capacity.quantiles import quantile_with_ci
+
+    seed, frac, n = 7, (0.1, 1.0), 6
+    r = estimate_hosting_capacity_unbalanced_stochastic(off, OFF, framework="en50160_envelope", n_scenarios=n,
+                                                        alpha=0.5, adoption_fraction=frac, seed=seed, tolerance=0.2)
+    # the adopters per scenario follow the documented RNG sequence
+    rng, n_cust, ks = np.random.default_rng(seed), len(off.asymmetric_load), []
+    for _ in range(n):
+        ks.append(max(1, round(rng.uniform(*frac) * n_cust)))
+        rng.choice(n_cust, size=ks[-1], replace=False)
+    assert r.n_adopters == ks
+    totals = sorted(lam * k / 1000.0 for lam, k in zip(r.critical_lambdas, ks))
+    expected = quantile_with_ci(totals, 0.5)
+    assert r.hc_mw == pytest.approx(expected.point, abs=1e-6)
+    assert r.hc_mw_ci_low == pytest.approx(expected.low, abs=1e-6) if expected.low is not None \
+        else r.hc_mw_ci_low is None
+    assert totals[0] <= r.hc_mw <= totals[-1]
+    old_formula = r.hc_lambda * n_cust * sum(frac) / 2 / 1000.0
+    assert abs(r.hc_mw - old_formula) > 1e-3  # this seed separates the two definitions
+
+
+def test_runner_rejects_pv_scale_on_three_phase_before_any_power_flow(off, tmp_path) -> None:
+    """CR-11: pv_scale was silently dropped on the three-phase path."""
+    from test_hc_duration import _runner_series
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    import run_hosting_capacity_study as study
+
+    path, _ = _runner_series(tmp_path)
+    out = tmp_path / "hc"
+    with pytest.raises(SystemExit, match="pv_scale"):
+        study.main(["--network", OFF, "--methods", "deterministic", "--qsts-series", str(path),
+                    "--critical-point-from-series", "--output-dir", str(out)])
+    assert not out.exists()
+    with pytest.raises(ValueError, match="pv_scale"):
+        study._run_deterministic(off, OFF, {"framework": "en50160_envelope", "pv_scale": 0.8})
+    with pytest.raises(ValueError, match="pv_scale"):
+        study._run_stochastic(off, OFF, {"framework": "en50160_envelope", "pv_scale": 0.8}, 0.1, False)
+
+
+def test_runner_series_critical_point_keeps_phase_model_and_source(tmp_path, monkeypatch) -> None:
+    """CR-11: det_scales was replaced wholesale, dropping phase_model and source_vm_pu."""
+    from test_hc_duration import _runner_series
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    import run_hosting_capacity_study as study
+    from gridsense_sim.hosting_capacity.study_design import CriticalPoint
+
+    path, _ = _runner_series(tmp_path)
+    monkeypatch.setattr(study, "critical_point",
+                        lambda *a, **k: CriticalPoint(0, 0, 1.0, 1.0, "min_load_high_pv", 0.9))
+    out = tmp_path / "hc"
+    study.main(["--network", OFF, "--methods", "deterministic", "--framework", "en50160_envelope",
+                "--qsts-series", str(path), "--critical-point-from-series",
+                "--phase-model", "balanced_equivalent", "--source-vm-pu", "1.0", "--output-dir", str(out)])
+    row = json.loads(pq.read_table(next(out.rglob("*.parquet"))).to_pylist()[0]["raw_value"])
+    assert row["status"] == "ok" and row["phase_model"] == "balanced_equivalent"
+    assert row["source_vm_pu"] == 1.0 and row["params"]["phase_model"] == "balanced_equivalent"
