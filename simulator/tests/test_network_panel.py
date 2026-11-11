@@ -116,3 +116,17 @@ def test_aggregated_load_variant_is_marked_in_series_source(tmp_path) -> None:
     row = json.loads(pq.read_table(next(out.rglob("*.parquet"))).to_pylist()[0]["raw_value"])
     assert row["series_source"].endswith("|aggregated_load")
     assert row["params"]["load_aggregated"] is True and row["params"]["run_label"] == "t/agg"
+
+
+def test_kerber_vorstadt_is_identical_on_every_build() -> None:
+    import random
+
+    random.seed(1)
+    a = make_network("kerber_vorstadt")
+    random.seed(2)
+    expected_next = random.random()
+    random.seed(2)
+    b = make_network("kerber_vorstadt")
+    assert a.line["std_type"].tolist() == b.line["std_type"].tolist()
+    assert a.line["r_ohm_per_km"].tolist() == b.line["r_ohm_per_km"].tolist()
+    assert random.random() == expected_next          # the caller's random state is untouched

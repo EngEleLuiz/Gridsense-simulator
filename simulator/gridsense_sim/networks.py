@@ -46,6 +46,7 @@ import pandapower as pp
 import pandapower.networks as pn
 
 EXISTING_PV_POLICIES = ("remove", "keep")
+KERBER_VORSTADT_SEED = 20261110
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,25 @@ class NetworkInfo:
     citation: str
     requires: str | None = None   # optional package
     hc_panel: bool = True
+
+
+def _kerber_vorstadt() -> pp.pandapowerNet:
+    """Kerber suburban network with a fixed random seed.
+
+    pandapower draws each service cable's type ("NAYY 4x50" or "NYY 4x35") with
+    Python's global ``random`` module, so two builds of the same network differ
+    (found in Phase 8 while checking the batched solver against pandapower).
+    A fixed seed makes every build -- and every process of a protocol run --
+    identical; the caller's random state is restored afterwards.
+    """
+    import random
+
+    state = random.getstate()
+    random.seed(KERBER_VORSTADT_SEED)
+    try:
+        return pn.create_kerber_vorstadtnetz_kabel_1()
+    finally:
+        random.setstate(state)
 
 
 def _simbench(code: str) -> Callable[[], pp.pandapowerNet]:
@@ -95,8 +115,9 @@ NETWORKS: dict[str, NetworkInfo] = {
         "kerber_landnetz", pn.create_kerber_landnetz_freileitung_1, "Germany", "reference",
         "Kerber rural overhead-line reference network, 13 loads", _KERBER_CITE),
     "kerber_vorstadt": NetworkInfo(
-        "kerber_vorstadt", pn.create_kerber_vorstadtnetz_kabel_1, "Germany", "reference",
-        "Kerber suburban cable reference network, 146 loads", _KERBER_CITE),
+        "kerber_vorstadt", _kerber_vorstadt, "Germany", "reference",
+        "Kerber suburban cable reference network, 146 loads (service-cable types drawn with a fixed seed)",
+        _KERBER_CITE),
     "simbench_lv_rural1": NetworkInfo(
         "simbench_lv_rural1", _simbench("1-LV-rural1--0-sw"), "Germany", "benchmark",
         "SimBench LV rural 1 (derived from real grid data), 13 loads", _SIMBENCH_CITE, "simbench"),
