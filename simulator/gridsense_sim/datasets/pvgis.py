@@ -25,8 +25,16 @@ from pathlib import Path
 
 import pandas as pd
 
-from .base import DatasetError, DatasetInfo, ProfileKind, ProfileSet, Site, SourceFile
-from .cache import DataCache, build_url
+from .base import (
+    DatasetError,
+    DatasetInfo,
+    ProfileKind,
+    ProfileSet,
+    Site,
+    SourceFile,
+    invalid_file_error,
+)
+from .cache import DataCache, build_url, json_validator
 from .quality import QualityReport, check_solar_alignment, fill_short_gaps, regularize
 
 INFO = DatasetInfo(
@@ -45,6 +53,8 @@ INFO = DatasetInfo(
     notes=("Satellite-derived: no local shading; 14 % default system losses.",),
 )
 
+# Keys parse_pvgis_json reads; checked on download so an error page is never cached.
+VALIDATE_RESPONSE = json_validator("inputs.location", "inputs.pv_module", "outputs.hourly")
 API_URLS = (
     "https://re.jrc.ec.europa.eu/api/v5_3/seriescalc",
     "https://re.jrc.ec.europa.eu/api/v5_2/seriescalc",
@@ -69,7 +79,10 @@ def parse_pvgis_json(
     if isinstance(payload, (str, Path)):
         path = Path(payload)
         source = source or SourceFile.from_path(path)
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise invalid_file_error("PVGIS", path, "JSON response", exc) from exc
     try:
         inputs = payload["inputs"]
         rows = payload["outputs"]["hourly"]
@@ -141,7 +154,8 @@ def load(
         fname = (f"pvgis_{latitude:.4f}_{longitude:.4f}_{startyear}_{endyear}"
                  f"_t{angle:g}_a{aspect:g}_l{loss:g}.json")
         src = cache.fetch("pvgis", fname, request_urls(latitude, longitude, startyear, endyear,
-                                                       angle, aspect, loss))
+                                                       angle, aspect, loss),
+                          validate=VALIDATE_RESPONSE)
     else:
         src = SourceFile.from_path(source_file)
     return parse_pvgis_json(Path(src.path), src, utc_offset_hours, tz_name)

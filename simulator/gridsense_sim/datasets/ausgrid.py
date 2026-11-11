@@ -34,7 +34,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .base import DatasetError, DatasetInfo, ProfileKind, ProfileSet, Site, SourceFile
+from .base import (
+    DatasetError,
+    DatasetInfo,
+    ProfileKind,
+    ProfileSet,
+    Site,
+    SourceFile,
+    invalid_file_error,
+)
 from .cache import DataCache
 from .quality import (
     QualityReport,
@@ -119,8 +127,14 @@ def parse_ausgrid(raw: bytes | str | Path, source: SourceFile | None = None) -> 
         path = Path(raw)
         source = source or SourceFile.from_path(path)
         if path.suffix.lower() == ".zip":
-            with zipfile.ZipFile(path) as zf:
-                member = next(m for m in zf.namelist() if m.lower().endswith(".csv"))
+            try:
+                zf = zipfile.ZipFile(path)
+            except zipfile.BadZipFile as exc:
+                raise invalid_file_error("Ausgrid", path, "ZIP archive", exc) from exc
+            with zf:
+                member = next((m for m in zf.namelist() if m.lower().endswith(".csv")), None)
+                if member is None:
+                    raise DatasetError(f"Ausgrid: no CSV inside {path.name}.")
                 raw = zf.read(member)
         else:
             raw = path.read_bytes()
@@ -161,8 +175,19 @@ def parse_ausgrid(raw: bytes | str | Path, source: SourceFile | None = None) -> 
 
 
 def _wide(long: pd.DataFrame, channels: tuple[str, ...]) -> pd.DataFrame:
+    """Sum ``channels`` per (stamp, customer); a slot with any missing read stays NaN.
+
+    ``pivot_table(aggfunc="sum")`` would turn an all-NaN slot into 0 kW and a
+    slot with one blank channel (e.g. GC missing, CL present) into a partial
+    sum, so missing data would pass the completeness check and bias the
+    series low. A slot is therefore NaN unless every channel row present
+    for it has a value.
+    """
     sub = long[long["channel"].isin(channels)]
-    wide = sub.pivot_table(index="utc", columns="customer", values="kw", aggfunc="sum", dropna=False)
+    grouped = sub.groupby(["utc", "customer"], sort=True)["kw"]
+    total = grouped.sum(min_count=1)
+    total[grouped.count() < grouped.size()] = np.nan
+    wide = total.unstack("customer").sort_index(axis=1)
     wide.columns = [f"c{int(c):03d}" for c in wide.columns]
     wide.index = pd.DatetimeIndex(wide.index).tz_convert("UTC")
     return wide
@@ -236,9 +261,9 @@ def load(
     if source_file is not None:
         src = SourceFile.from_path(source_file)
     else:
-        cache = cache or DataCache()
-        hit = cache.cached("ausgrid", YEAR_FILES[year])
-        src = hit or cache.fetch("ausgrid", Path(YEAR_URLS[year][0]).name, YEAR_URLS[year])
+        # fetch() returns a cached copy if present; with no known URL it raises
+        # DataNotAvailableError explaining where to put a manual download.
+        src = (cache or DataCache()).fetch("ausgrid", YEAR_FILES[year], YEAR_URLS[year])
     long, meta = parse_ausgrid(Path(src.path), src)
     ps = build_profile_sets(long, meta, kind)
     ps.meta["year"] = year

@@ -33,8 +33,16 @@ from pathlib import Path
 
 import pandas as pd
 
-from .base import DatasetError, DatasetInfo, ProfileKind, ProfileSet, Site, SourceFile
-from .cache import DataCache
+from .base import (
+    DatasetError,
+    DatasetInfo,
+    ProfileKind,
+    ProfileSet,
+    Site,
+    SourceFile,
+    invalid_file_error,
+)
+from .cache import DataCache, validate_zip
 from .quality import (
     QualityReport,
     check_irradiance,
@@ -239,7 +247,11 @@ def parse_inmet_csv(
 def extract_station_csv(zip_path: str | Path, station: str) -> tuple[str, bytes]:
     """Return ``(member_name, bytes)`` of a station CSV inside an INMET yearly ZIP."""
     station = station.upper()
-    with zipfile.ZipFile(zip_path) as zf:
+    try:
+        zf = zipfile.ZipFile(zip_path)
+    except zipfile.BadZipFile as exc:
+        raise invalid_file_error("INMET", zip_path, "ZIP archive", exc) from exc
+    with zf:
         members = [m for m in zf.namelist() if m.upper().endswith(".CSV")]
         hits = [m for m in members if f"_{station}_" in Path(m).name.upper()]
         if not hits:
@@ -260,7 +272,7 @@ def load(
         src = SourceFile.from_path(source_file)
     else:
         url = YEAR_ZIP_URL.format(year=int(year))
-        src = cache.fetch("inmet", f"{int(year)}.zip", [url])
+        src = cache.fetch("inmet", f"{int(year)}.zip", [url], validate=validate_zip)
     path = Path(src.path)
     if path.suffix.lower() == ".zip":
         member, raw = extract_station_csv(path, station)

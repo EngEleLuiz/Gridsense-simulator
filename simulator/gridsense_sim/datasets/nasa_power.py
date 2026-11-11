@@ -19,8 +19,16 @@ from pathlib import Path
 
 import pandas as pd
 
-from .base import DatasetError, DatasetInfo, ProfileKind, ProfileSet, Site, SourceFile
-from .cache import DataCache, build_url
+from .base import (
+    DatasetError,
+    DatasetInfo,
+    ProfileKind,
+    ProfileSet,
+    Site,
+    SourceFile,
+    invalid_file_error,
+)
+from .cache import DataCache, build_url, json_validator
 from .quality import (
     QualityReport,
     check_irradiance,
@@ -47,6 +55,9 @@ INFO = DatasetInfo(
 API_URL = "https://power.larc.nasa.gov/api/temporal/hourly/point"
 PARAMETERS = ("ALLSKY_SFC_SW_DWN", "T2M")
 RESOLUTION = pd.Timedelta("1h")
+# Keys parse_nasa_power_json reads; checked on download so an error page is never cached.
+VALIDATE_RESPONSE = json_validator("header", "properties.parameter.ALLSKY_SFC_SW_DWN",
+                                   "geometry.coordinates")
 
 
 def request_url(latitude: float, longitude: float, start: str, end: str) -> str:
@@ -64,7 +75,10 @@ def parse_nasa_power_json(
     if isinstance(payload, (str, Path)):
         path = Path(payload)
         source = source or SourceFile.from_path(path)
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise invalid_file_error("NASA POWER", path, "JSON response", exc) from exc
     if "payload" in payload and "properties" not in payload:  # tolerate wrapped responses
         payload = payload["payload"]
     try:
@@ -118,7 +132,8 @@ def load(
     if source_file is None:
         cache = cache or DataCache()
         fname = f"nasa_power_{latitude:.4f}_{longitude:.4f}_{start}_{end}.json"
-        src = cache.fetch("nasa_power", fname, [request_url(latitude, longitude, str(start), str(end))])
+        src = cache.fetch("nasa_power", fname, [request_url(latitude, longitude, str(start), str(end))],
+                          validate=VALIDATE_RESPONSE)
     else:
         src = SourceFile.from_path(source_file)
     return parse_nasa_power_json(Path(src.path), src, site_name, utc_offset_hours, tz_name)

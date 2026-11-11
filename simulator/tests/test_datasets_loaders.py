@@ -9,7 +9,10 @@ import pandas as pd
 import pytest
 from gridsense_sim.datasets import (
     DATASETS,
+    DataCache,
+    DataNotAvailableError,
     DatasetError,
+    InvalidContentError,
     ProfileKind,
     ausgrid,
     inmet,
@@ -20,6 +23,7 @@ from gridsense_sim.datasets import (
     pvgis,
     simbench_profiles,
 )
+from gridsense_sim.datasets import cli
 from gridsense_sim.datasets.quality import QualityReport, check_solar_alignment
 
 
@@ -73,6 +77,23 @@ def test_inmet_without_header_or_coordinates_fails_clearly(tmp_path) -> None:
         inmet.parse_inmet_csv(path, station="Z999")
 
 
+def test_inmet_html_error_page_is_not_cached_and_bad_cache_is_explained(tmp_path, monkeypatch) -> None:
+    """CR-13: HTTP 200 + HTML instead of the yearly ZIP."""
+    (tmp_path / "inmet_2023.html").write_bytes(b"<html><body>Manutencao</body></html>")
+    # Path.as_uri() builds a valid file URL on every OS; f"file://{tmp_path}" breaks on
+    # Windows (file://C:\Users\... is not a URL).
+    monkeypatch.setattr(inmet, "YEAR_ZIP_URL", f"{tmp_path.as_uri()}/inmet_{{year}}.html")
+    cache = DataCache(root=tmp_path / "cache", offline=False, retries=1, backoff_s=0)
+    with pytest.raises(DataNotAvailableError, match="not a ZIP"):
+        inmet.load("A806", 2023, cache=cache)
+    assert not cache.path_for("inmet", "2023.zip").exists()
+    # a bad file already in the cache (from before validation existed) -> DatasetError with a hint
+    cached = cache.path_for("inmet", "2023.zip")
+    cached.write_bytes(b"<html><body>Manutencao</body></html>")
+    with pytest.raises(InvalidContentError, match="delete it and its 2023.zip.source.json"):
+        inmet.load("A806", 2023, cache=cache)
+
+
 # ---------------------------------------------------------------- Ausgrid
 def test_ausgrid_load_and_pv_units_clock_and_flags(tmp_path) -> None:
     path = fx.write_ausgrid(tmp_path / "solar.csv", start="2012-09-20", days=30)  # spans DST start
@@ -105,6 +126,45 @@ def test_ausgrid_rejects_bad_layout(tmp_path) -> None:
         ausgrid.load(source_file=tmp_path / "bad.csv")
 
 
+def test_ausgrid_without_file_or_url_raises_manual_download_hint(tmp_path, monkeypatch, capsys) -> None:
+    """CR-12: no cached file and no known URL -> DataNotAvailableError, not IndexError."""
+    monkeypatch.setenv("GRIDSENSE_DATA_DIR", str(tmp_path / "raw"))
+    monkeypatch.delenv("GRIDSENSE_OFFLINE", raising=False)
+    cache = DataCache(offline=False, retries=1, backoff_s=0)
+    with pytest.raises(DataNotAvailableError, match="Download it manually") as exc:
+        ausgrid.load("load", year="2012-2013", cache=cache)
+    assert ausgrid.YEAR_FILES["2012-2013"] in str(exc.value)
+    assert cli.main(["qc", "ausgrid"]) == 2  # DatasetError exit code, no traceback
+    err = capsys.readouterr().err
+    assert err.startswith("error: Raw file not available") and "Traceback" not in err
+    # a manually placed copy under the expected name is then picked up
+    target = cache.path_for("ausgrid", ausgrid.YEAR_FILES["2012-2013"])
+    target.parent.mkdir(parents=True)
+    fx.write_ausgrid(target, days=10)
+    assert ausgrid.load("load", year="2012-2013", cache=cache).data.shape[1] == 4
+
+
+def test_ausgrid_blank_day_stays_missing_and_fails_completeness(tmp_path) -> None:
+    """CR-03: a blank GC or GG day must stay NaN, never become 0 kW or a partial sum."""
+    blank = frozenset({(2, "GC", 3), (3, "GG", 5)})
+    path = fx.write_ausgrid(tmp_path / "solar.csv", days=10, blank=blank)
+    long, meta = ausgrid.parse_ausgrid(path)
+    assert long.loc[(long["customer"] == 2) & (long["channel"] == "GC"), "kw"].isna().sum() == 48
+    load_wide = ausgrid._wide(long, ("GC", "CL"))
+    pv_wide = ausgrid._wide(long, ("GG",))
+    assert list(load_wide.columns) == ["c001", "c002", "c003", "c004"]
+    assert load_wide["c002"].isna().sum() == 48  # GC blank, CL present: not a partial sum
+    assert pv_wide["c003"].isna().sum() == 48  # all-NaN slot: not 0 kW
+    assert load_wide.drop(columns="c002").notna().all().all()
+    # one blank day in ten (90 %) is below the 95 % completeness threshold
+    load = ausgrid.build_profile_sets(long, meta, "load")
+    pv = ausgrid.build_profile_sets(long, meta, "pv")
+    assert "c002" not in load.data.columns and "c003" not in pv.data.columns
+    for ps in (load, pv):
+        assert "incomplete_customers_dropped" in {i.code for i in ps.quality.issues}
+        assert ps.data.shape[1] == 3
+
+
 # -------------------------------------------------------------------- LCL
 def test_lcl_utc_duplicates_nulls_and_tariff_filter(tmp_path) -> None:
     path = fx.write_lcl(tmp_path / "lcl.csv")
@@ -128,6 +188,16 @@ def test_lcl_reads_partitioned_zip_and_period(tmp_path) -> None:
     assert ps.data.shape == (96, 1)
     with pytest.raises(DatasetError, match="no rows"):
         lcl.load(start="2020-01-01", end="2020-02-01", source_file=zpath)
+
+
+def test_lcl_max_households_counts_only_households_with_data_in_the_period(tmp_path) -> None:
+    """S-06: households listed first but without rows in [start, end) must not use up slots."""
+    path = fx.write_lcl(tmp_path / "lcl.csv", households=3, start="2012-01-01", days=2, tou=False)
+    fx.write_lcl(path, households=3, start="2013-03-28", days=6, first_id=3, tou=False, header=False)
+    ps = lcl.load(start="2013-03-28", end="2013-04-03", max_households=2, source_file=path)
+    assert list(ps.data.columns) == ["MAC000003", "MAC000004"]
+    no_period = lcl.load(start=None, end=None, max_households=2, source_file=path)
+    assert list(no_period.data.columns) == ["MAC000000", "MAC000001"]  # file order without a period
 
 
 # ------------------------------------------------------------- NASA POWER
@@ -170,6 +240,48 @@ def test_pvgis_requires_pv_calculation() -> None:
         r.pop("P")
     with pytest.raises(DatasetError, match="pvcalculation"):
         pvgis.parse_pvgis_json(p)
+
+
+@pytest.mark.parametrize("module", [ausgrid, lcl])
+def test_html_saved_as_zip_is_a_dataset_error(tmp_path, module) -> None:
+    """CR-13: a .zip that is really an HTML page raises InvalidContentError, not BadZipFile."""
+    bad = tmp_path / "data.zip"
+    bad.write_bytes(b"<!DOCTYPE html><html>Not found</html>")
+    with pytest.raises(InvalidContentError, match="not a valid ZIP archive"):
+        module.load(source_file=bad)
+
+
+@pytest.mark.parametrize(("module", "patch", "good"), [
+    (pvgis, "request_urls", fx.pvgis_payload),
+    (nasa_power, "request_url", fx.nasa_power_payload),
+])
+def test_json_apis_reject_error_bodies_and_explain_bad_cache(tmp_path, monkeypatch, module, patch, good) -> None:
+    """CR-13: a 200 response that is HTML or an error JSON is not cached; a bad cached file is explained."""
+    html = tmp_path / "error.html"
+    html.write_bytes(b"<!DOCTYPE html><html>Gateway timeout</html>")
+    error_json = fx.write_json(tmp_path / "error.json", {"message": "Internal error", "status": 500})
+    ok = fx.write_json(tmp_path / "ok.json", good())
+    cache = DataCache(root=tmp_path / "cache", offline=False, retries=1, backoff_s=0)
+    urls = [html.as_uri(), error_json.as_uri()]
+    monkeypatch.setattr(module, patch, (lambda *a: urls) if patch == "request_urls" else (lambda *a: urls[0]))
+    with pytest.raises(DataNotAvailableError, match="rejected"):
+        module.load(cache=cache)
+    if patch == "request_urls":  # PVGIS has mirrors: both bad bodies are rejected, the good one is used
+        urls.append(ok.as_uri())
+        assert module.load(cache=cache).sources[0].url == ok.as_uri()
+    else:
+        urls[0] = error_json.as_uri()
+        with pytest.raises(DataNotAvailableError, match="expected keys"):
+            module.load(cache=cache)
+        urls[0] = ok.as_uri()
+        assert module.load(cache=cache).sources[0].url == ok.as_uri()
+    folder = tmp_path / "cache" / module.INFO.key
+    (cached,) = (p for p in folder.iterdir() if not p.name.endswith(".source.json"))
+    # simulate a corrupt file cached before validation existed (sidecar re-recorded)
+    cached.write_bytes(html.read_bytes())
+    cached.with_name(cached.name + ".source.json").unlink()
+    with pytest.raises(InvalidContentError, match="delete it"):
+        module.load(cache=cache)
 
 
 # --------------------------------------------------------------- SimBench
