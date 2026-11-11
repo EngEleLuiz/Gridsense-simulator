@@ -1,0 +1,16 @@
+{
+  "name": "prodist_m8_drp_drc_127v",
+  "adequate_lo_pu": 0.9212598425196851,
+  "adequate_hi_pu": 1.047244094488189,
+  "critical_lo_pu": 0.8661417322834646,
+  "critical_hi_pu": 1.062992125984252,
+  "upper_precarious_max": 0.03,
+  "upper_critical_max": 0.005,
+  "lower_precarious_max": 0.03,
+  "lower_critical_max": 0.005,
+  "thermal_max": 0.0,
+  "reading_minutes": 10,
+  "window_days": 7,
+  "reference": "ANEEL PRODIST Module 8, 127 V phase-neutral base (220/127 V systems): adequate 117-133 V, precarious 110-117 V and 133-135 V, critical outside; DRP <= 3 %, DRC <= 0.5 %. Band edges written from memory of the Module 8 table: check them against the revision in force before citing.",
+  "to_verify": true
+}

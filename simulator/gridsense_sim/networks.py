@@ -39,8 +39,11 @@ grids and are not part of the hosting-capacity panel.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 import pandapower as pp
 import pandapower.networks as pn
@@ -59,6 +62,7 @@ class NetworkInfo:
     citation: str
     requires: str | None = None   # optional package
     hc_panel: bool = True
+    source: str = "builtin"       # "builtin" or "file:<sha256 of the network file>"
 
 
 def _kerber_vorstadt() -> pp.pandapowerNet:
@@ -161,4 +165,90 @@ def make_network(key: str, existing_pv: str = "remove") -> pp.pandapowerNet:
     return net
 
 
-__all__ = ["EXISTING_PV_POLICIES", "NETWORKS", "NetworkInfo", "hc_panel", "make_network"]
+def register_network(
+    key: str,
+    factory: Callable[[], pp.pandapowerNet],
+    *,
+    default_framework: str,
+    voltage_levels_kv: tuple[float, ...] | None,
+    country: str = "unknown",
+    kind: str = "custom",
+    description: str = "",
+    citation: str = "",
+    source: str = "custom",
+    hc_panel: bool = False,
+) -> NetworkInfo:
+    """Register a network that is not part of the built-in panel (Phase 8.3).
+
+    This is how local networks (for example a feeder converted from the
+    Brazilian BDGD) enter a study without being hard-coded in the repository:
+    the study code only ever sees a registered key.
+
+    ``default_framework`` and ``voltage_levels_kv`` are mandatory on purpose:
+    judging a new network by a guessed voltage band is the error the limits
+    module exists to prevent. Built-in keys cannot be overwritten.
+    """
+    from .hosting_capacity import limits as _limits
+
+    if key in NETWORKS and NETWORKS[key].source == "builtin":
+        raise ValueError(f"'{key}' is a built-in network and cannot be replaced.")
+    if default_framework not in _limits.FRAMEWORKS:
+        raise ValueError(f"Unknown voltage framework '{default_framework}'. Known: {sorted(_limits.FRAMEWORKS)}.")
+    info = NetworkInfo(key, factory, country, kind, description, citation, hc_panel=hc_panel, source=source)
+    NETWORKS[key] = info
+    _limits.NETWORK_DEFAULT_FRAMEWORK[key] = default_framework
+    _limits.NETWORK_VOLTAGE_LEVELS_KV[key] = tuple(voltage_levels_kv) if voltage_levels_kv else None
+    _limits.NETWORK_LIMITS[key] = _limits.limits_for(key)
+    return info
+
+
+def unregister_network(key: str) -> None:
+    """Remove a network added with :func:`register_network` (built-ins are kept)."""
+    from .hosting_capacity import limits as _limits
+
+    if key in NETWORKS and NETWORKS[key].source != "builtin":
+        del NETWORKS[key]
+        for table in (_limits.NETWORK_DEFAULT_FRAMEWORK, _limits.NETWORK_VOLTAGE_LEVELS_KV, _limits.NETWORK_LIMITS):
+            table.pop(key, None)
+
+
+def network_file_metadata(path: str | Path) -> dict:
+    """Sidecar metadata of a network file (``<file>.meta.json``), or ``{}``."""
+    meta = Path(str(path) + ".meta.json")
+    return json.loads(meta.read_text(encoding="utf-8")) if meta.is_file() else {}
+
+
+def register_network_file(
+    key: str,
+    path: str | Path,
+    *,
+    default_framework: str | None = None,
+    voltage_levels_kv: tuple[float, ...] | None = None,
+) -> NetworkInfo:
+    """Register a pandapower JSON file as network ``key``.
+
+    Metadata comes from the sidecar ``<file>.meta.json`` written by
+    ``gridsense-bdgd build`` (framework, voltage level, origin); explicit
+    arguments win. The file's SHA-256 becomes part of ``NetworkInfo.source``
+    so a result can say exactly which file it was computed on.
+    """
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Network file {path} does not exist.")
+    meta = network_file_metadata(path)
+    framework = default_framework or meta.get("default_framework")
+    levels = voltage_levels_kv or meta.get("voltage_levels_kv")
+    if not framework or not levels:
+        raise ValueError(
+            f"Network file {path} has no sidecar metadata: pass the default voltage framework and "
+            "the voltage level(s) of the customer buses explicitly.")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    return register_network(
+        key, lambda: pp.from_json(str(path)), default_framework=framework,
+        voltage_levels_kv=tuple(float(v) for v in levels), country=meta.get("country", "unknown"),
+        kind=meta.get("kind", "custom"), description=meta.get("description", f"network file {path.name}"),
+        citation=meta.get("citation", ""), source=f"file:{digest}")
+
+
+__all__ = ["EXISTING_PV_POLICIES", "NETWORKS", "NetworkInfo", "hc_panel", "make_network",
+           "network_file_metadata", "register_network", "register_network_file", "unregister_network"]
