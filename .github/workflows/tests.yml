@@ -3,7 +3,8 @@
 # Jobs (all must pass for the single required check "ci-ok"):
 #   hygiene      merge-conflict markers, CRLF, JSON/YAML, docker compose config
 #   lint         ruff: syntax errors / undefined names block; the rest is advisory
-#   simulator    pytest + coverage (floor 80%) on Ubuntu (Py 3.10, 3.12) and Windows (Py 3.12)
+#   simulator    pytest + coverage (floor 80%) on Ubuntu (Py 3.10, 3.12) and Windows (Py 3.12),
+#                with the CPU build of PyTorch for the batched solver
 #   ingestion    pytest (Kafka mocked)
 #   api          pytest (DB session mocked)
 #   e2e          simulator -> Bronze -> TimescaleDB -> HC study -> dbt build -> real API
@@ -143,6 +144,10 @@ jobs:
           cache-dependency-path: simulator/pyproject.toml
       - name: Install
         run: pip install -e "simulator[dev,fast]" pytest-cov
+      # CPU build of PyTorch: the batched solver (Phase 8) is tested on CPU; the
+      # CUDA path runs the same code and has its own test, skipped without a GPU.
+      - name: Install PyTorch (CPU)
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       # Coverage floor: measured at 86% (Linux, py3.12, 2026-11); the floor
       # sits ~5 points below so platform-specific skips do not trip it, while
       # a large untested addition or a silently skipped suite does.
