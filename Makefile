@@ -120,6 +120,8 @@ api-run: ## Serve the Gold layer on :8000 (docs at /docs)
 	uvicorn app.main:app --reload --port 8000
 
 # ---------------------------------------------------------------- tests
+# Test tools are not in the runtime requirements files; install them with
+#   pip install -e "simulator[dev,fast]" -r ingestion/requirements-dev.txt -r api/requirements-dev.txt
 test-simulator: ## All simulator tests
 	$(PYTHON) -m pytest simulator/tests -q -ra
 

@@ -3,7 +3,7 @@
 # Jobs (all must pass for the single required check "ci-ok"):
 #   hygiene      merge-conflict markers, CRLF, JSON/YAML, docker compose config
 #   lint         ruff: syntax errors / undefined names block; the rest is advisory
-#   simulator    pytest + coverage on Ubuntu (Py 3.10, 3.12) and Windows (Py 3.12)
+#   simulator    pytest + coverage (floor 80%) on Ubuntu (Py 3.10, 3.12) and Windows (Py 3.12)
 #   ingestion    pytest (Kafka mocked)
 #   api          pytest (DB session mocked)
 #   e2e          simulator -> Bronze -> TimescaleDB -> HC study -> dbt build -> real API
@@ -143,12 +143,16 @@ jobs:
           cache-dependency-path: simulator/pyproject.toml
       - name: Install
         run: pip install -e "simulator[dev,fast]" pytest-cov
+      # Coverage floor: measured at 86% (Linux, py3.12, 2026-11); the floor
+      # sits ~5 points below so platform-specific skips do not trip it, while
+      # a large untested addition or a silently skipped suite does.
       - name: Test
         run: >
           python -m pytest simulator/tests -q -ra --durations=15
           --junitxml=reports/simulator-junit.xml
           --cov=gridsense_sim --cov-report=term-missing:skip-covered
           --cov-report=xml:reports/simulator-coverage.xml
+          --cov-fail-under=80
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v7
@@ -169,8 +173,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: ingestion/requirements.txt
-      - run: pip install -r ingestion/requirements.txt
+          cache-dependency-path: |
+            ingestion/requirements.txt
+            ingestion/requirements-dev.txt
+      - run: pip install -r ingestion/requirements-dev.txt
       - run: python -m pytest tests -q -ra --junitxml=../reports/ingestion-junit.xml
         working-directory: ingestion
 
@@ -186,8 +192,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: api/requirements.txt
-      - run: pip install -r api/requirements.txt
+          cache-dependency-path: |
+            api/requirements.txt
+            api/requirements-dev.txt
+      - run: pip install -r api/requirements-dev.txt
       - run: python -m pytest -q -ra --junitxml=../reports/api-junit.xml
         working-directory: api
 
@@ -199,7 +207,7 @@ jobs:
     timeout-minutes: 30
     services:
       timescaledb:
-        image: timescale/timescaledb:latest-pg16
+        image: timescale/timescaledb:2.17.2-pg16  # keep in sync with docker-compose.yml
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -228,6 +236,8 @@ jobs:
             transform/requirements.txt
             api/requirements.txt
 
+      # Runtime requirements only: the e2e job runs the real loaders and the
+      # real API server, not their unit tests (pytest comes from simulator[dev]).
       - name: Install (three isolated venvs)
         run: |
           python -m venv /tmp/sim && /tmp/sim/bin/pip install -q -e "simulator[dev,fast]" -r ingestion/requirements.txt

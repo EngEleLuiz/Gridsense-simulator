@@ -1,0 +1,3 @@
+# Runtime + test dependencies (local development and CI).
+-r requirements.txt
+pytest>=9.2.0

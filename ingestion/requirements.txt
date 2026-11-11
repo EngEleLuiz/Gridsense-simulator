@@ -1,4 +1,4 @@
+# Runtime dependencies only. Test tooling lives in requirements-dev.txt.
 confluent-kafka>=2.16.1
 pyarrow>=26.0.1
-pytest>=9.2.0
 psycopg2-binary>=2.9.13

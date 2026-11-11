@@ -179,7 +179,9 @@ python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
 pip install -e "simulator[dev,fast,kafka]"   # 'fast' = numba, ~10x faster power flow
-pip install -r ingestion/requirements.txt -r api/requirements.txt
+# requirements-dev.txt = runtime requirements.txt + test tools (pytest, httpx);
+# install requirements.txt alone when you only need to run the services.
+pip install -r ingestion/requirements-dev.txt -r api/requirements-dev.txt
 
 # dbt pins a deepdiff version incompatible with pandapower: use its own venv
 python -m venv .venv-dbt

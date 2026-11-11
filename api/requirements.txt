@@ -1,6 +1,6 @@
+# Runtime dependencies only: this file is what the API Docker image installs.
+# Test tooling lives in requirements-dev.txt.
 fastapi>=0.162.2
 uvicorn[standard]>=0.54.0
 sqlalchemy>=2.1.8
 psycopg2-binary>=2.9.13
-pytest>=9.2.0
-httpx>=0.28.1
