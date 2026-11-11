@@ -35,6 +35,7 @@ gpu = [
 [project.scripts]
 gridsense-sim = "gridsense_sim.cli:main"
 gridsense-data = "gridsense_sim.datasets.cli:main"
+gridsense-bdgd = "gridsense_sim.bdgd.cli:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
