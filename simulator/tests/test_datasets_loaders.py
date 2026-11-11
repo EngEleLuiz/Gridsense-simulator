@@ -80,7 +80,9 @@ def test_inmet_without_header_or_coordinates_fails_clearly(tmp_path) -> None:
 def test_inmet_html_error_page_is_not_cached_and_bad_cache_is_explained(tmp_path, monkeypatch) -> None:
     """CR-13: HTTP 200 + HTML instead of the yearly ZIP."""
     (tmp_path / "inmet_2023.html").write_bytes(b"<html><body>Manutencao</body></html>")
-    monkeypatch.setattr(inmet, "YEAR_ZIP_URL", f"file://{tmp_path}/inmet_{{year}}.html")
+    # Path.as_uri() builds a valid file URL on every OS; f"file://{tmp_path}" breaks on
+    # Windows (file://C:\Users\... is not a URL).
+    monkeypatch.setattr(inmet, "YEAR_ZIP_URL", f"{tmp_path.as_uri()}/inmet_{{year}}.html")
     cache = DataCache(root=tmp_path / "cache", offline=False, retries=1, backoff_s=0)
     with pytest.raises(DataNotAvailableError, match="not a ZIP"):
         inmet.load("A806", 2023, cache=cache)
