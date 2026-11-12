@@ -28,8 +28,9 @@ account, managed service, or paid license is required at any phase.
 | 7.3 — Network panel | ✅ | Seven LV grids (CIGRE, Kerber, SimBench rural/semi-urban/urban, **real** Schutterwald grid); existing-PV policy; SimBench with its own per-load profiles (no data transfer). See [`docs/CHANGES_phase7.3-network-panel.md`](docs/CHANGES_phase7.3-network-panel.md). |
 | 7.4 — Three-phase + dashboards | ✅ | Unbalanced hosting capacity on the IEEE European LV feeder (UK), balanced-equivalent control on the same solver; five new Grafana dashboards validated against real payloads. See [`docs/CHANGES_phase7.4-unbalanced-and-dashboards.md`](docs/CHANGES_phase7.4-unbalanced-and-dashboards.md). |
 | 7.5 — Experiment protocol | ✅ | Frozen protocol v1 (49 runs, ~11 h) with a resumable executor; PRODIST checked against REN 956/2021; series and study conditions exposed in the dbt mart. See [`docs/EXPERIMENT_PROTOCOL.md`](docs/EXPERIMENT_PROTOCOL.md). |
-| 8 — Certified surrogate + open dataset | 🔲 planned (prototype outside the repo) | Physics prior (LinDistFlow) + learned residual with conformal screening, as an accelerator inside the Phase 6 estimators. Renumbered from 7: its large speed-up needs the duration criterion τ̄ and benefits from real-data training. |
-| 9 — Streaming HC / operating envelope | 🔲 planned | Continuous envelope recomputation over the existing Kafka pipeline. |
+| 8 — Acceleration + Brazilian networks | ✅ | Batched power flow in PyTorch (CPU or GPU) for the duration-criterion QSTS, checked against pandapower; networks and criteria as registered data (`--network-file`, `--qsts-criterion-file`); converter from the Brazilian BDGD to pandapower feeders (no data shipped). See [`docs/ACCELERATION.md`](docs/ACCELERATION.md), [`docs/BDGD.md`](docs/BDGD.md) and [`docs/CHANGES_phase8.md`](docs/CHANGES_phase8.md). |
+| 9 — Certified surrogate + open dataset | 🔲 planned (prototype outside the repo) | Physics prior (LinDistFlow) + learned residual with conformal screening, as an accelerator inside the Phase 6 estimators. Renumbered from 7, then 8: its large speed-up needs the duration criterion τ̄ and benefits from real-data training. |
+| 10 — Streaming HC / operating envelope | 🔲 planned | Continuous envelope recomputation over the existing Kafka pipeline. |
 
 ## Phase 6.1 — methodology review and bugfixes
 
@@ -258,6 +259,9 @@ python scripts/run_hosting_capacity_study.py --network cigre_lv \
 | `--qsts-network-profiles` | SimBench grids only: QSTS on the grid's own per-load profiles (15 min, 2016), with `--qsts-start`/`--qsts-days`. |
 | `--critical-point-from-series` | Deterministic/stochastic use the operating point taken from `--qsts-series` (max PV, min load); λ = installed capacity. |
 | `--qsts-series` | Run QSTS on a real-data series from `gridsense-data build-series` (Phase 7). The file is integrity-checked; its manifest SHA-256 is recorded with the result. Replaces the synthetic-profile options. |
+| `--qsts-backend`, `--device` | Duration criteria only: `torch` runs the batched solver (`--device auto`/`cpu`/`cuda`); balanced networks; capacities agree with pandapower within `--tolerance`. See [`docs/ACCELERATION.md`](docs/ACCELERATION.md). |
+| `--network-file` | Run on a pandapower JSON file registered under `--network NAME` (e.g. a feeder from `gridsense-bdgd build`); its SHA-256 is recorded. See [`docs/BDGD.md`](docs/BDGD.md). |
+| `--qsts-criterion-file` | Register duration criteria from JSON (see [`protocol/criteria/`](protocol/criteria/README.md)), then select one with `--qsts-criterion`. |
 
 **Reading the results.** Compare only rows with `is_comparable = true`,
 the same `criterion_framework`, and (for snapshot methods) the same
@@ -290,6 +294,8 @@ curl "http://localhost:8000/api/v1/hosting-capacity/compare?comparable_only=fals
 make test        # simulator + ingestion + API (no Docker needed)
 make test-hc     # hosting-capacity tests only (~40 s)
 make test-datasets   # Phase 7 loaders, QC, series builder (offline fixtures)
+make test-accel      # Phase 8 batched solver, batched QSTS, plug-ins, BDGD converter
+make benchmark       # pandapower vs batched solver (needs PyTorch)
 make test-real-data  # the same checks on genuine raw files in $GRIDSENSE_REAL_DATA_DIR
 make lint        # same ruff checks as CI
 make dbt-build   # dbt tests (needs TimescaleDB running)
@@ -342,6 +348,8 @@ gridsense-simulator/
 │   ├── CHANGES_phase6.1-review-fixes.md  # post-merge review fixes (R01–R22)
 │   ├── CHANGES_phase7-real-datasets.md   # Phase 7 changelog and first real-data results
 │   ├── DATASETS.md                  # sources, licences, measured quirks, QC, series pipeline
+│   ├── ACCELERATION.md              # Phase 8: batched solver, GPU setup, benchmark, acceptance
+│   ├── BDGD.md                      # Phase 8: Brazilian feeders from ANEEL's BDGD
 │   └── CODE_REVIEW_phase6-bugfix.md # post-merge review, open issues
 ├── simulator/
 │   ├── gridsense_sim/
@@ -350,6 +358,8 @@ gridsense-simulator/
 │   │   │                            # deterministic, stochastic, qsts, errors
 │   │   ├── datasets/                # Phase 7: inmet, nasa_power, pvgis, ausgrid, lcl,
 │   │   │                            # simbench_profiles, cache, quality, solar, series, cli
+│   │   ├── accel/                   # Phase 8: batched power flow (model.py, solver.py)
+│   │   ├── bdgd/                    # Phase 8: BDGD -> pandapower converter (gridsense-bdgd)
 │   │   ├── provenance.py            # git commit + library versions per result
 │   │   ├── engine.py, cli.py, profiles.py, scenarios.py, ...
 │   └── tests/                       # test_hc_*.py: one file per module
@@ -357,6 +367,9 @@ gridsense-simulator/
 │   ├── generate_voltage_scope_seed.py  # Python scope rule -> dbt seed
 │   ├── debug/                       # check_db.py, query_bronze.py (ad-hoc checks)
 │   ├── run_hosting_capacity_study.py
+│   ├── benchmark_power_flow.py      # Phase 8: pandapower vs batched solver
+│   ├── derive_protocol.py           # Phase 8: protocol-v1 -> protocol-v2 (batched QSTS)
+│   ├── compare_protocols.py         # Phase 8: run-by-run comparison of two protocol results
 │   └── ci/                          # jsonl_to_bronze.py, assert_e2e.py
 ├── ingestion/                       # Kafka -> Parquet -> TimescaleDB (+ HC loader)
 ├── transform/                       # dbt: seeds, staging/silver/gold, tests

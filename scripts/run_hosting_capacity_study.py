@@ -74,7 +74,7 @@ from gridsense_sim.hosting_capacity import (
     find_hosting_capacity_deterministic,
     find_hosting_capacity_qsts,
 )
-from gridsense_sim.hosting_capacity.duration import DURATION_CRITERIA
+from gridsense_sim.hosting_capacity.duration import DURATION_CRITERIA, load_criterion_file
 from gridsense_sim.hosting_capacity.qsts import DEFAULT_STEPS_PER_DAY, DEFAULT_TOTAL_STEPS
 from gridsense_sim.hosting_capacity.qsts_duration import find_hosting_capacity_duration, result_to_dict
 from gridsense_sim.hosting_capacity.study_design import RULES as CRITICAL_POINT_RULES
@@ -86,7 +86,7 @@ from gridsense_sim.hosting_capacity.unbalanced import (
     find_hosting_capacity_unbalanced,
     is_unbalanced_network,
 )
-from gridsense_sim.networks import EXISTING_PV_POLICIES, NETWORKS, make_network
+from gridsense_sim.networks import EXISTING_PV_POLICIES, NETWORKS, make_network, register_network_file
 from gridsense_sim.provenance import collect_provenance
 
 logger = logging.getLogger("gridsense_sim.run_hosting_capacity_study")
@@ -273,7 +273,14 @@ def _run_qsts_duration(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
             kw.pop("total_steps"), kw.pop("steps_per_day"), kw.pop("profile_seed"),
             peak_load_mult=kw.pop("peak_load_mult", None))
     kw.pop("framework", None)  # the criterion carries its own voltage bands
-    r = find_hosting_capacity_duration(net, network, series, criterion, **kw)
+    backend = kw.pop("backend", "pandapower")
+    accel = {k: kw.pop(k) for k in ("device", "dtype", "memory_mb") if k in kw}
+    if backend == "torch":  # Phase 8.2: same criterion and result, batched solver (CPU or GPU)
+        from gridsense_sim.hosting_capacity.qsts_batched import find_hosting_capacity_duration_batched
+
+        r = find_hosting_capacity_duration_batched(net, network, series, criterion, **kw, **accel)
+    else:
+        r = find_hosting_capacity_duration(net, network, series, criterion, **kw)
     d = result_to_dict(r)
     critical_start = (d["windows"][[w["index"] for w in d["windows"]].index(r.critical_window)]["start_step"]
                       if r.critical_window is not None else None)
@@ -302,6 +309,8 @@ def _run_qsts_duration(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
         "notes": r.notes,
         "series_source": r.series_source,
         "series_manifest_sha256": r.series_manifest_sha256,
+        "backend": r.backend,
+        "backend_info": r.backend_info,
     })
 
 
@@ -309,7 +318,7 @@ def _run_qsts(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
     if kw.get("criterion", "zero_tolerance") != "zero_tolerance":
         return _run_qsts_duration(net, network, kw)
     kw = {k: v for k, v in kw.items()
-          if k not in ("criterion", "windows", "baseline_report")}
+          if k not in ("criterion", "windows", "baseline_report", "backend", "device", "dtype", "memory_mb")}
     r = find_hosting_capacity_qsts(net, network, **kw)
     series_fields = {
         "series_source": r.series_source,
@@ -477,9 +486,58 @@ def write_records_to_parquet(records: list[dict], output_dir: str | Path) -> Pat
     return last_path
 
 
+def _register_plugins(argv: list[str] | None) -> None:
+    """Register a network file and criterion files named on the command line.
+
+    They must exist before the main parser is built, because ``--network`` and
+    ``--qsts-criterion`` only accept registered names (Phase 8.3).
+    """
+    pre = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    pre.add_argument("--network")
+    pre.add_argument("--network-file")
+    pre.add_argument("--network-default-framework")
+    pre.add_argument("--network-voltage-kv", type=float, nargs="+")
+    pre.add_argument("--qsts-criterion-file", action="append", default=[])
+    known, _ = pre.parse_known_args(argv)
+    for path in known.qsts_criterion_file:
+        load_criterion_file(path)
+    if known.network_file:
+        if not known.network:
+            pre.error("--network-file needs --network NAME (the name the results are stored under)")
+        try:
+            register_network_file(known.network, known.network_file,
+                                  default_framework=known.network_default_framework,
+                                  voltage_levels_kv=tuple(known.network_voltage_kv)
+                                  if known.network_voltage_kv else None)
+        except (ValueError, FileNotFoundError) as exc:
+            pre.error(f"{exc} (--network-default-framework / --network-voltage-kv)")
+        SUPPORTED_NETWORKS[known.network] = lambda k=known.network: make_network(k)
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    _register_plugins(argv)
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--network", required=True, choices=sorted(SUPPORTED_NETWORKS))
+    p.add_argument("--network-file", default=None, metavar="PATH",
+                   help="pandapower JSON file registered under --network for this run (e.g. a feeder "
+                        "converted with 'gridsense-bdgd build'). Its SHA-256 is recorded with the result.")
+    p.add_argument("--network-default-framework", default=None, choices=sorted(FRAMEWORKS),
+                   help="With --network-file and no sidecar metadata: default voltage framework.")
+    p.add_argument("--network-voltage-kv", type=float, nargs="+", default=None,
+                   help="With --network-file and no sidecar metadata: nominal voltage(s) of the "
+                        "customer buses, in kV (e.g. 0.38).")
+    p.add_argument("--qsts-criterion-file", action="append", default=[], metavar="PATH",
+                   help="JSON file defining one or more duration criteria; select one by name with "
+                        "--qsts-criterion (see protocol/criteria/).")
+    p.add_argument("--qsts-backend", default="pandapower", choices=["pandapower", "torch"],
+                   help="Duration criteria only. 'torch': batched solver on CPU or GPU (Phase 8.2); "
+                        "balanced networks only, results agree with pandapower within --tolerance.")
+    p.add_argument("--device", default="auto",
+                   help="With --qsts-backend torch: auto (GPU when available), cpu, cuda, cuda:1 ...")
+    p.add_argument("--torch-dtype", default="float64", choices=["float64", "float32"],
+                   help="With --qsts-backend torch: float32 is for exploration only (1e-5 pu accuracy).")
+    p.add_argument("--torch-memory-mb", type=int, default=1024,
+                   help="With --qsts-backend torch: working-memory budget per batch.")
     p.add_argument("--methods", nargs="+", default=list(METHODS), choices=METHODS)
     p.add_argument("--framework", default=None, choices=sorted(FRAMEWORKS),
                    help="Voltage framework; default = network default (see limits.py).")
@@ -580,6 +638,9 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
          "--qsts-block-average needs --qsts-series"),
         (args.qsts_windows is None or args.qsts_criterion != "zero_tolerance",
          "--qsts-windows only applies to a duration --qsts-criterion"),
+        (args.qsts_backend == "pandapower" or args.qsts_criterion != "zero_tolerance",
+         "--qsts-backend torch needs a duration --qsts-criterion (prodist_m8_zero_tolerance for tau = 0)"),
+        (args.torch_memory_mb >= 16, "--torch-memory-mb must be >= 16"),
         (args.qsts_series is None or args.qsts_peak_load is None,
          "--qsts-peak-load does not apply to --qsts-series (the series is already normalised; "
          "use 'gridsense-data build-series --peak-load')"),
@@ -621,6 +682,9 @@ def main(argv: list[str] | None = None) -> None:
     if args.qsts_criterion != "zero_tolerance":
         duration_extras = {"windows": args.qsts_windows,
                            "baseline_report": not args.qsts_skip_night_baseline}
+        if args.qsts_backend == "torch":
+            duration_extras.update({"backend": "torch", "device": args.device, "dtype": args.torch_dtype,
+                                    "memory_mb": args.torch_memory_mb})
         qsts_kwargs.update(duration_extras)
     qsts_series = None
     snapshot_info: dict[str, Any] | None = None
@@ -728,7 +792,8 @@ def main(argv: list[str] | None = None) -> None:
         snapshot_info=snapshot_info,
         context_info={"existing_pv": args.existing_pv, "run_label": args.run_label,
                       "network_kind": NETWORKS[args.network].kind,
-                      "network_country": NETWORKS[args.network].country},
+                      "network_country": NETWORKS[args.network].country,
+                      "network_source": NETWORKS[args.network].source},
     )
     write_records_to_parquet(records, args.output_dir)
     failed = [r["method"] for r in records if json.loads(r["raw_value"])["status"] == "error"]

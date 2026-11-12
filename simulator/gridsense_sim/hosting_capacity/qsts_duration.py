@@ -102,6 +102,8 @@ class QstsDurationResult:
     series_source: str = "synthetic"
     series_manifest_sha256: str | None = None
     notes: list[str] = field(default_factory=list)
+    backend: str = "pandapower"
+    backend_info: dict = field(default_factory=dict)
 
 
 class _Evaluator:
@@ -402,6 +404,75 @@ def _verify(ev: _Evaluator, idx, lam: float, crit: DurationCriterion) -> dict:
     }
 
 
+def _plan_windows(ts: TimeSeries, crit: DurationCriterion, windows: list[int] | None):
+    """Split the series into compliance windows; shared by both backends."""
+    if ts.daylight_steps.size == 0:
+        raise NoDaylightError("The series has no step with PV output > 0.")
+    res_min = 1440.0 / ts.steps_per_day
+    per_window = round(crit.window_days * 24 * 60 / res_min)
+    n_windows = ts.n_steps // per_window
+    notes: list[str] = []
+    if n_windows == 0:
+        raise ValueError(f"Series of {ts.n_steps} steps is shorter than one {crit.window_days}-day window.")
+    if ts.n_steps % per_window:
+        notes.append(f"{ts.n_steps % per_window} trailing step(s) outside complete windows ignored")
+    matches = abs(res_min - crit.reading_minutes) < 1e-9
+    if not matches:
+        notes.append(f"series step {res_min:g} min != criterion reading {crit.reading_minutes} min: "
+                     "counts are per step")
+    wanted = list(range(n_windows)) if windows is None else [w for w in windows if 0 <= w < n_windows]
+    if not wanted:
+        raise ValueError("No valid window selected.")
+    return res_min, per_window, matches, notes, wanted
+
+
+def _critical_window(results: list[WindowResult]):
+    """The window with the smallest capacity: (window or None, lambda, bounded)."""
+    finite = [r for r in results if math.isfinite(r.lambda_max)]
+    critical = min(finite, key=lambda r: r.lambda_max) if finite else None
+    lam = critical.lambda_max if critical else math.inf
+    return critical, lam, bool(critical and critical.bounded)
+
+
+def _build_result(network_name, crit, ts, results, verification, alloc, n_scope, tolerance, res_min,
+                  matches, notes, power_flows, backend="pandapower", backend_info=None) -> QstsDurationResult:
+    """Assemble the study result from the per-window results; shared by both backends."""
+    finite = [r for r in results if math.isfinite(r.lambda_max)]
+    critical, lam, bounded = _critical_window(results)
+    lam_fail = critical.lambda_fail if critical else None
+    # Only windows with an exceedance have a capacity; a window without one
+    # (bounded=False) only gives a lower bound (its search cap) and is counted
+    # as censored instead of entering the quantiles as if it were a capacity.
+    exceeded = [r for r in finite if r.bounded]
+    vals = np.array([r.lambda_max for r in exceeded]) if exceeded else np.array([np.nan])
+    quant = {f"p{q}": float(np.nanpercentile(vals, q)) if exceeded else math.nan for q in (10, 50, 90)}
+    quant.update({"min": float(np.min(vals)) if exceeded else math.nan,
+                  "max": float(np.max(vals)) if exceeded else math.nan,
+                  "n_windows": len(exceeded), "n_windows_censored": len(finite) - len(exceeded)})
+    lower_ok = all(r.baseline_lower.get("compliant", True) for r in results)
+    pv = alloc.mw_at(lam if math.isfinite(lam) else 0.0)
+    conditions = StudyConditions(
+        network_name=network_name, framework=crit.name, criterion_kind="statistical",
+        v_min_pu=crit.adequate_lo_pu, v_max_pu=crit.adequate_hi_pu, load_scale=None,
+        n_voltage_buses=n_scope,
+    )
+    binding = None
+    if critical and critical.binding:
+        binding = {"critical": "upper_voltage_critical", "precarious": "upper_voltage_precarious",
+                   "thermal": "pv_attributable_overload"}[critical.binding]
+    return QstsDurationResult(
+        network_name=network_name, criterion=crit.to_dict(), lambda_max=lam, lambda_fail=lam_fail,
+        bounded=bounded, resolved=bool(lam_fail is not None and lam_fail - lam <= tolerance + 1e-12),
+        critical_window=critical.index if critical else None, binding_constraint=binding,
+        pv_mw_per_bus=pv, total_pv_mw=round(sum(pv.values()), 6), windows=results,
+        window_lambda_quantiles=quant, verification=verification, baseline_lower_compliant=lower_ok,
+        resolution_minutes=res_min, resolution_matches_criterion=matches, total_steps=ts.n_steps,
+        steps_per_day=ts.steps_per_day, power_flows=power_flows, conditions=conditions,
+        series_source=ts.source, series_manifest_sha256=ts.manifest_sha256, notes=notes,
+        backend=backend, backend_info=backend_info or {},
+    )
+
+
 def find_hosting_capacity_duration(
     net: pp.pandapowerNet,
     network_name: str,
@@ -433,23 +504,7 @@ def find_hosting_capacity_duration(
     """
     crit = get_criterion(criterion)
     ts = series
-    if ts.daylight_steps.size == 0:
-        raise NoDaylightError("The series has no step with PV output > 0.")
-    res_min = 1440.0 / ts.steps_per_day
-    per_window = round(crit.window_days * 24 * 60 / res_min)
-    n_windows = ts.n_steps // per_window
-    notes: list[str] = []
-    if n_windows == 0:
-        raise ValueError(f"Series of {ts.n_steps} steps is shorter than one {crit.window_days}-day window.")
-    if ts.n_steps % per_window:
-        notes.append(f"{ts.n_steps % per_window} trailing step(s) outside complete windows ignored")
-    matches = abs(res_min - crit.reading_minutes) < 1e-9
-    if not matches:
-        notes.append(f"series step {res_min:g} min != criterion reading {crit.reading_minutes} min: "
-                     "counts are per step")
-    wanted = list(range(n_windows)) if windows is None else [w for w in windows if 0 <= w < n_windows]
-    if not wanted:
-        raise ValueError("No valid window selected.")
+    res_min, per_window, matches, notes, wanted = _plan_windows(ts, crit, windows)
     ev = _Evaluator(net, network_name, ts, allocation, crit, load_matrix)
     # Exceedance needs at most (allowances + 1) steps with events: shrink the
     # bracket until no more than that remain (or the bracket is tight), so
@@ -481,46 +536,13 @@ def find_hosting_capacity_duration(
         if outcome.bounded and outcome.lambda_max > 0:
             warm = outcome.lambda_max * 1.25  # warm start for the next window
 
-    finite = [r for r in results if math.isfinite(r.lambda_max)]
-    critical = min(finite, key=lambda r: r.lambda_max) if finite else None
-    lam = critical.lambda_max if critical else math.inf
-    bounded = bool(critical and critical.bounded)
-    lam_fail = critical.lambda_fail if critical else None
+    critical, lam, bounded = _critical_window(results)
     verification: dict = {}
     if verify and critical and bounded and lam > 0:
         idx = list(range(critical.index * per_window, (critical.index + 1) * per_window))
         verification = _verify(ev, idx, lam, crit)
-    # Only windows with an exceedance have a capacity; a window without one
-    # (bounded=False) only gives a lower bound (its search cap) and is counted
-    # as censored instead of entering the quantiles as if it were a capacity.
-    exceeded = [r for r in finite if r.bounded]
-    vals = np.array([r.lambda_max for r in exceeded]) if exceeded else np.array([np.nan])
-    quant = {f"p{q}": float(np.nanpercentile(vals, q)) if exceeded else math.nan for q in (10, 50, 90)}
-    quant.update({"min": float(np.min(vals)) if exceeded else math.nan,
-                  "max": float(np.max(vals)) if exceeded else math.nan,
-                  "n_windows": len(exceeded), "n_windows_censored": len(finite) - len(exceeded)})
-    lower_ok = all(r.baseline_lower.get("compliant", True) for r in results)
-    alloc = ev.allocation
-    pv = alloc.mw_at(lam if math.isfinite(lam) else 0.0)
-    conditions = StudyConditions(
-        network_name=network_name, framework=crit.name, criterion_kind="statistical",
-        v_min_pu=crit.adequate_lo_pu, v_max_pu=crit.adequate_hi_pu, load_scale=None,
-        n_voltage_buses=len(ev.scope),
-    )
-    binding = None
-    if critical and critical.binding:
-        binding = {"critical": "upper_voltage_critical", "precarious": "upper_voltage_precarious",
-                   "thermal": "pv_attributable_overload"}[critical.binding]
-    return QstsDurationResult(
-        network_name=network_name, criterion=crit.to_dict(), lambda_max=lam, lambda_fail=lam_fail,
-        bounded=bounded, resolved=bool(lam_fail is not None and lam_fail - lam <= tolerance + 1e-12),
-        critical_window=critical.index if critical else None, binding_constraint=binding,
-        pv_mw_per_bus=pv, total_pv_mw=round(sum(pv.values()), 6), windows=results,
-        window_lambda_quantiles=quant, verification=verification, baseline_lower_compliant=lower_ok,
-        resolution_minutes=res_min, resolution_matches_criterion=matches, total_steps=ts.n_steps,
-        steps_per_day=ts.steps_per_day, power_flows=ev.power_flows, conditions=conditions,
-        series_source=ts.source, series_manifest_sha256=ts.manifest_sha256, notes=notes,
-    )
+    return _build_result(network_name, crit, ts, results, verification, ev.allocation, len(ev.scope),
+                         tolerance, res_min, matches, notes, ev.power_flows)
 
 
 def result_to_dict(r: QstsDurationResult) -> dict:

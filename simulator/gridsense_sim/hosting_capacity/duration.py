@@ -50,8 +50,10 @@ until checked against the revision in force.
 
 from __future__ import annotations
 
+import json
 import math
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
+from pathlib import Path
 from typing import Literal
 
 EventKind = Literal["precarious", "critical", "thermal"]
@@ -163,6 +165,36 @@ def get_criterion(name: str | DurationCriterion) -> DurationCriterion:
         raise KeyError(f"Unknown duration criterion {name!r}; known: {sorted(DURATION_CRITERIA)}") from None
 
 
+def criterion_from_dict(spec: dict) -> DurationCriterion:
+    """Build a criterion from a plain mapping (e.g. a JSON file); unknown keys are an error."""
+    known = {f.name for f in fields(DurationCriterion)}
+    unknown = sorted(set(spec) - known)
+    if unknown:
+        raise ValueError(f"Unknown criterion field(s) {unknown}; allowed: {sorted(known)}")
+    return DurationCriterion(**spec)
+
+
+def register_criterion(criterion: DurationCriterion, *, replace: bool = False) -> DurationCriterion:
+    """Add a criterion to :data:`DURATION_CRITERIA` (Phase 8.3).
+
+    The built-in criteria cannot be replaced silently: results cite a criterion
+    by name, so one name must always mean the same numbers.
+    """
+    if criterion.name in DURATION_CRITERIA and not replace:
+        if DURATION_CRITERIA[criterion.name] == criterion:
+            return criterion
+        raise ValueError(f"Criterion {criterion.name!r} is already registered with different values.")
+    DURATION_CRITERIA[criterion.name] = criterion
+    return criterion
+
+
+def load_criterion_file(path: str | Path) -> list[DurationCriterion]:
+    """Register the criterion (or list of criteria) defined in a JSON file."""
+    spec = json.loads(Path(path).read_text(encoding="utf-8"))
+    items = spec if isinstance(spec, list) else [spec]
+    return [register_criterion(criterion_from_dict(item)) for item in items]
+
+
 @dataclass
 class WeekThresholds:
     """PV-side thresholds collected for one compliance window.
@@ -250,5 +282,5 @@ def weekly_capacity(th: WeekThresholds, criterion: DurationCriterion) -> WeeklyO
 
 __all__ = [
     "DURATION_CRITERIA", "DurationCriterion", "EventKind", "WeekThresholds", "WeeklyOutcome",
-    "get_criterion", "weekly_capacity",
+    "criterion_from_dict", "get_criterion", "load_criterion_file", "register_criterion", "weekly_capacity",
 ]

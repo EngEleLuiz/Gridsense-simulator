@@ -25,10 +25,17 @@ data = [
     "pyarrow>=14",
     "simbench>=1.5",
 ]
+# Batched solver (Phase 8). This pulls the default PyTorch build of your platform
+# (CPU-only on Windows). For CUDA install the wheel from pytorch.org first:
+# see docs/ACCELERATION.md.
+gpu = [
+    "torch>=2.2",
+]
 
 [project.scripts]
 gridsense-sim = "gridsense_sim.cli:main"
 gridsense-data = "gridsense_sim.datasets.cli:main"
+gridsense-bdgd = "gridsense_sim.bdgd.cli:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
