@@ -416,6 +416,9 @@ def build_records(
             )
             logger.exception("%s failed; recorded as status='error'", method)
         else:
+            if (context_info or {}).get("source_vm_pu") is not None:
+                # same top-level field the three-phase rows carry, so dashboards read one place
+                payload.setdefault("source_vm_pu", context_info["source_vm_pu"])
             logger.info(
                 "%s: lambda_max=%s total_pv_mw=%s binding=%s",
                 method, payload.get("lambda_max"), payload.get("total_pv_mw"),
@@ -553,8 +556,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Networks with single-phase customers (IEEE European LV): 'unbalanced' keeps each "
                         "customer on its phase; 'balanced_equivalent' splits load and PV evenly (same solver).")
     p.add_argument("--source-vm-pu", type=float, default=None,
-                   help="Override the source voltage of three-phase networks (IEEE European LV is "
-                        "specified at 1.05 pu).")
+                   help="Override the voltage of the external grid (the upstream source), in pu. "
+                        "Three-phase networks: the IEEE European LV feeder is specified at 1.05 pu. "
+                        "Balanced networks: every external grid is set to this value, which stands for "
+                        "the fixed tap / upstream voltage the feeder is operated at (sensitivity to the "
+                        "fixed-tap delimitation). Recorded with the result.")
     p.add_argument("--pv-power-factor", type=float, default=1.0,
                    help="Fixed inductive power factor of the study PV (Q = -P tan(acos(pf)), inverter "
                         f"rated S = P / pf). 1.0 = unity (default); allowed range [{MIN_PV_POWER_FACTOR}, 1]. "
@@ -621,6 +627,8 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
     checks = [
         (args.load_scale is None or args.load_scale > 0, "--load-scale must be > 0"),
         (args.tolerance > 0, "--tolerance must be > 0"),
+        (args.source_vm_pu is None or 0.9 <= args.source_vm_pu <= 1.1,
+         "--source-vm-pu must be in [0.9, 1.1]"),
         (MIN_PV_POWER_FACTOR <= args.pv_power_factor <= 1.0,
          f"--pv-power-factor must be in [{MIN_PV_POWER_FACTOR}, 1]"),
         (0 < args.mc_alpha < 1, "--mc-alpha must be in (0, 1)"),
@@ -778,7 +786,20 @@ def main(argv: list[str] | None = None) -> None:
         }
         logger.info("QSTS on real series %s (%s, manifest %s)", args.qsts_series,
                     real.series.source, real.manifest_sha256[:12])
-    network_factory = lambda: make_network(args.network, args.existing_pv)  # noqa: E731
+    source_info: dict[str, Any] = {}
+    if args.source_vm_pu is not None and not three_phase:
+        # Balanced networks: the override is applied to the network itself, so the three
+        # methods and both QSTS backends see the same source (three-phase estimators take
+        # it as an argument instead).
+        defaults = make_network(args.network, args.existing_pv).ext_grid["vm_pu"].tolist()
+        source_info = {"source_vm_pu": args.source_vm_pu, "source_vm_pu_network_default": defaults}
+
+    def network_factory() -> pp.pandapowerNet:
+        net = make_network(args.network, args.existing_pv)
+        if source_info:
+            net.ext_grid["vm_pu"] = args.source_vm_pu
+        return net
+
     records = build_records(
         network_name=args.network,
         network_factory=network_factory,
@@ -802,7 +823,7 @@ def main(argv: list[str] | None = None) -> None:
         qsts_series=qsts_series,
         qsts_series_info=qsts_series_info,
         snapshot_info=snapshot_info,
-        context_info={"existing_pv": args.existing_pv, "run_label": args.run_label,
+        context_info={**source_info, "existing_pv": args.existing_pv, "run_label": args.run_label,
                       "network_kind": NETWORKS[args.network].kind,
                       "network_country": NETWORKS[args.network].country,
                       "network_source": NETWORKS[args.network].source},
