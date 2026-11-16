@@ -44,7 +44,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandapower as pp
 
-from .allocation import PVAllocation, apply_allocation, proportional_to_load
+from .allocation import PVAllocation, apply_allocation, proportional_to_load, reactive_per_active
 from .baseline import require_feasible_baseline
 from .conditions import StudyConditions
 from .errors import NoDaylightError
@@ -99,6 +99,7 @@ def find_hosting_capacity(
     profile_seed: int | None = 42,
     strategy: str = "min_over_steps",
     peak_load_mult: float | None = None,
+    pv_power_factor: float = 1.0,
 ) -> QstsHCResult:
     """Zero-tolerance QSTS HC.
 
@@ -115,6 +116,7 @@ def find_hosting_capacity(
             when ``series`` is ``None`` (finding R22); ignored otherwise.
         strategy: ``"min_over_steps"`` (default, fastest) or
             ``"global_bisection"``. Same contract; see the module docstring.
+        pv_power_factor: Fixed inductive power factor of the PV (1.0 = unity).
 
     Raises:
         NoDaylightError: the series has no step with PV output > 0.
@@ -125,6 +127,7 @@ def find_hosting_capacity(
             f"strategy must be 'min_over_steps' or 'global_bisection', got {strategy!r}."
         )
     limits = limits_for(network_name, framework)
+    q_per_p = reactive_per_active(pv_power_factor)
     work = copy.deepcopy(net)
     allocation = allocation or proportional_to_load(work)
     allocation.require_non_empty()
@@ -141,7 +144,7 @@ def find_hosting_capacity(
         )
 
     scope = voltage_scope_buses(work, limits)
-    conditions = StudyConditions.build(network_name, limits, None, len(scope))
+    conditions = StudyConditions.build(network_name, limits, None, len(scope), pv_power_factor)
     base_p = work.load["p_mw"].to_numpy(copy=True)
     base_q = work.load["q_mvar"].to_numpy(copy=True)
     power_flows = 0
@@ -150,7 +153,7 @@ def find_hosting_capacity(
         m = float(ts.load_mult[t])
         work.load["p_mw"] = base_p * m
         work.load["q_mvar"] = base_q * m
-        apply_allocation(work, allocation, lam * float(ts.pv_mult[t]))
+        apply_allocation(work, allocation, lam * float(ts.pv_mult[t]), q_per_p)
 
     # Baseline gate over the whole series.
     for t in range(ts.n_steps):

@@ -13,11 +13,35 @@ would silently change meaning with the operating point.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 import pandapower as pp
 
 HC_SGEN_PREFIX = "hosting_capacity_pv"
+MIN_PV_POWER_FACTOR = 0.8
+
+
+def reactive_per_active(power_factor: float) -> float:
+    """Q/P of the study PV for a fixed inductive power factor (generator convention).
+
+    The inverters run in constant-power-factor mode and *absorb* reactive
+    power in proportion to their active output::
+
+        Q = -P * tan(arccos(power_factor))
+
+    ``lambda_`` keeps measuring installed **active** power: the inverter is
+    assumed to be rated ``S = P / power_factor`` (e.g. +8.7 % at 0.92), so the
+    reactive support never curtails active power. That sizing rule is an
+    assumption of the study and is recorded with every result through
+    ``conditions.pv_power_factor``.
+
+    Returns ``0.0`` for unity power factor (the default of every method).
+    """
+    if not MIN_PV_POWER_FACTOR <= power_factor <= 1.0:
+        raise ValueError(
+            f"pv_power_factor must be in [{MIN_PV_POWER_FACTOR}, 1.0] (inductive), got {power_factor}.")
+    return -math.tan(math.acos(power_factor)) if power_factor < 1.0 else 0.0
 
 
 @dataclass(frozen=True)
@@ -52,11 +76,14 @@ def proportional_to_load(net: pp.pandapowerNet) -> PVAllocation:
     return PVAllocation(base_mw_per_bus=base)
 
 
-def apply_allocation(net: pp.pandapowerNet, allocation: PVAllocation, lambda_: float) -> None:
+def apply_allocation(net: pp.pandapowerNet, allocation: PVAllocation, lambda_: float,
+                     q_per_p: float = 0.0) -> None:
     """Set the HC PV sgens of ``net`` to ``allocation.mw_at(lambda_)`` in place.
 
-    Creates one unity-power-factor sgen per bus on first use (name
-    prefixed :data:`HC_SGEN_PREFIX`), then only updates ``p_mw``.
+    Creates one sgen per bus on first use (name prefixed
+    :data:`HC_SGEN_PREFIX`), then only updates ``p_mw`` and ``q_mvar``.
+    ``q_per_p`` is the reactive power per unit of active power
+    (:func:`reactive_per_active`); ``0.0`` is unity power factor.
     """
     existing = {
         int(net.sgen.at[idx, "bus"]): idx
@@ -66,5 +93,6 @@ def apply_allocation(net: pp.pandapowerNet, allocation: PVAllocation, lambda_: f
     for bus, mw in allocation.mw_at(lambda_).items():
         if bus in existing:
             net.sgen.at[existing[bus], "p_mw"] = mw
+            net.sgen.at[existing[bus], "q_mvar"] = mw * q_per_p
         else:
-            pp.create_sgen(net, bus=bus, p_mw=mw, q_mvar=0.0, name=f"{HC_SGEN_PREFIX}_{bus}")
+            pp.create_sgen(net, bus=bus, p_mw=mw, q_mvar=mw * q_per_p, name=f"{HC_SGEN_PREFIX}_{bus}")

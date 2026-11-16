@@ -1,8 +1,8 @@
 """Shared monotone bisection used by every estimator.
 
 Contract: ``violates(0.0)`` is False (guaranteed by the baseline gate)
-and ``violates`` is monotone non-decreasing in lambda (P-only PV, no
-Volt-VAr -- see package docstring). Under that contract the feasible
+and ``violates`` is monotone non-decreasing in lambda (PV at unity or
+fixed power factor, no Volt-VAr -- see package docstring). Under that contract the feasible
 set is ``[0, lambda*)`` and the search brackets ``lambda*`` within
 ``tolerance``.
 

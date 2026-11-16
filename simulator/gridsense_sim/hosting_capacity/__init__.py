@@ -14,9 +14,16 @@ monotone bisection), which is what makes the comparison controlled.
 
 Units: ``lambda_`` is total PV / total nominal load in every method.
 
-ASSUMPTION: monotonicity of violation in lambda. It holds for P-only
-PV injection without Volt-VAr control; the baseline gate removes the
-load-driven case where it fails. Re-verify if Volt-VAr is added.
+ASSUMPTION: monotonicity of violation in lambda. It holds for PV at
+unity power factor without Volt-VAr control; the baseline gate removes
+the load-driven case where it fails. A *fixed* inductive power factor
+(``pv_power_factor < 1``) keeps every injection proportional to lambda,
+so each bus voltage and branch current still moves one way as lambda
+grows and the union of violations stays monotone -- but the PV can then
+also cause *under*voltage behind a mostly inductive transformer: the
+snapshot methods judge both sides, the duration QSTS reports the lower
+side at the capacity. Re-verify if voltage-dependent control (Volt-VAr,
+Volt-Watt) is added: it breaks the proportionality.
 
 No function in this package mutates the ``net`` passed by the caller.
 """

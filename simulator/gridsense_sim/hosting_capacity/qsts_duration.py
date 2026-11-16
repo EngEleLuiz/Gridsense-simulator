@@ -48,7 +48,7 @@ from dataclasses import asdict, dataclass, field
 import numpy as np
 import pandapower as pp
 
-from .allocation import PVAllocation, apply_allocation, proportional_to_load
+from .allocation import PVAllocation, apply_allocation, proportional_to_load, reactive_per_active
 from .conditions import StudyConditions
 from .duration import DurationCriterion, WeekThresholds, get_criterion, weekly_capacity
 from .errors import BaselineInfeasibleError, NoDaylightError
@@ -109,8 +109,9 @@ class QstsDurationResult:
 class _Evaluator:
     """Power flows at (step, lambda) with PV-side event classification."""
 
-    def __init__(self, net, network_name, ts, allocation, criterion, load_matrix):
+    def __init__(self, net, network_name, ts, allocation, criterion, load_matrix, q_per_p=0.0):
         self.limits = limits_for(network_name, None)
+        self.q_per_p = q_per_p
         self.net = copy.deepcopy(net)
         self.allocation = allocation or proportional_to_load(self.net)
         self.allocation.require_non_empty()
@@ -133,7 +134,7 @@ class _Evaluator:
         m = self.load_matrix[t] if self.load_matrix is not None else float(self.ts.load_mult[t])
         self.net.load["p_mw"] = self.base_p * m
         self.net.load["q_mvar"] = self.base_q * m
-        apply_allocation(self.net, self.allocation, lam * float(self.ts.pv_mult[t]))
+        apply_allocation(self.net, self.allocation, lam * float(self.ts.pv_mult[t]), self.q_per_p)
 
     def solve(self, t: int, lam: float):
         """Return (converged, vm over scope, line loading, trafo loading)."""
@@ -401,6 +402,30 @@ def _verify(ev: _Evaluator, idx, lam: float, crit: DurationCriterion) -> dict:
         # Regulatory allowance only (no baseline relief): True means every
         # consumer is compliant at this lambda by the letter of the criterion.
         "within_regulatory_allowance_per_bus": bool(per_p.max() <= allow_p and per_c.max() <= allow_c),
+        **lower_side_at_capacity(vmat, crit),
+    }
+
+
+def lower_side_at_capacity(vmat: np.ndarray, crit: DurationCriterion) -> dict:
+    """Worst per-bus lower-side DRP/DRC of one window *with* the PV at the capacity.
+
+    The search only follows the constraints that PV at unity power factor can
+    make worse (upper voltage, reverse-flow overload). With reactive absorption
+    (``pv_power_factor < 1``) the PV can also lower voltages behind a mostly
+    inductive transformer, so the lower side at the capacity is measured here
+    and can be compared with the no-PV ``baseline_lower`` of the same window.
+    Non-finite voltages (non-convergence, isolated buses) are counted on the
+    upper side and ignored here.
+    """
+    n = vmat.shape[0]
+    finite = np.isfinite(vmat)
+    crit_n = ((vmat < crit.critical_lo_pu - _EPS) & finite).sum(axis=0)
+    prec_n = ((vmat < crit.adequate_lo_pu - _EPS) & finite).sum(axis=0) - crit_n
+    drp, drc = float(prec_n.max() / n), float(crit_n.max() / n)
+    return {
+        "worst_bus_lower_drp": drp, "worst_bus_lower_drc": drc,
+        "lower_side_compliant": bool(drp <= crit.lower_precarious_max + 1e-12
+                                     and drc <= crit.lower_critical_max + 1e-12),
     }
 
 
@@ -435,7 +460,8 @@ def _critical_window(results: list[WindowResult]):
 
 
 def _build_result(network_name, crit, ts, results, verification, alloc, n_scope, tolerance, res_min,
-                  matches, notes, power_flows, backend="pandapower", backend_info=None) -> QstsDurationResult:
+                  matches, notes, power_flows, backend="pandapower", backend_info=None,
+                  pv_power_factor: float = 1.0) -> QstsDurationResult:
     """Assemble the study result from the per-window results; shared by both backends."""
     finite = [r for r in results if math.isfinite(r.lambda_max)]
     critical, lam, bounded = _critical_window(results)
@@ -454,8 +480,12 @@ def _build_result(network_name, crit, ts, results, verification, alloc, n_scope,
     conditions = StudyConditions(
         network_name=network_name, framework=crit.name, criterion_kind="statistical",
         v_min_pu=crit.adequate_lo_pu, v_max_pu=crit.adequate_hi_pu, load_scale=None,
-        n_voltage_buses=n_scope,
+        n_voltage_buses=n_scope, pv_power_factor=pv_power_factor,
     )
+    if pv_power_factor < 1.0:
+        notes = [*notes, f"PV at fixed inductive power factor {pv_power_factor:g}: lower-voltage events "
+                         "caused by reactive absorption are not searched; verification reports the lower "
+                         "side at the capacity (worst_bus_lower_drp / worst_bus_lower_drc)"]
     binding = None
     if critical and critical.binding:
         binding = {"critical": "upper_voltage_critical", "precarious": "upper_voltage_precarious",
@@ -489,6 +519,7 @@ def find_hosting_capacity_duration(
     verify: bool = True,
     load_matrix: np.ndarray | None = None,
     shrink_budget: int | None = None,
+    pv_power_factor: float = 1.0,
 ) -> QstsDurationResult:
     """Hosting capacity under a weekly duration criterion (see module docstring).
 
@@ -501,11 +532,13 @@ def find_hosting_capacity_duration(
         verify: Re-solve the critical window at the capacity and report per-bus counts.
         load_matrix: Optional per-load multipliers ``(n_steps, n_loads)`` (diversity).
         shrink_budget: Stop shrinking the bracket at this many evented steps.
+        pv_power_factor: Fixed inductive power factor of the PV (1.0 = unity).
     """
     crit = get_criterion(criterion)
     ts = series
     res_min, per_window, matches, notes, wanted = _plan_windows(ts, crit, windows)
-    ev = _Evaluator(net, network_name, ts, allocation, crit, load_matrix)
+    ev = _Evaluator(net, network_name, ts, allocation, crit, load_matrix,
+                    reactive_per_active(pv_power_factor))
     # Exceedance needs at most (allowances + 1) steps with events: shrink the
     # bracket until no more than that remain (or the bracket is tight), so
     # only those steps go through threshold bisection.
@@ -542,7 +575,8 @@ def find_hosting_capacity_duration(
         idx = list(range(critical.index * per_window, (critical.index + 1) * per_window))
         verification = _verify(ev, idx, lam, crit)
     return _build_result(network_name, crit, ts, results, verification, ev.allocation, len(ev.scope),
-                         tolerance, res_min, matches, notes, ev.power_flows)
+                         tolerance, res_min, matches, notes, ev.power_flows,
+                         pv_power_factor=pv_power_factor)
 
 
 def result_to_dict(r: QstsDurationResult) -> dict:

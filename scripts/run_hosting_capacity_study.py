@@ -74,6 +74,7 @@ from gridsense_sim.hosting_capacity import (
     find_hosting_capacity_deterministic,
     find_hosting_capacity_qsts,
 )
+from gridsense_sim.hosting_capacity.allocation import MIN_PV_POWER_FACTOR
 from gridsense_sim.hosting_capacity.duration import DURATION_CRITERIA, load_criterion_file
 from gridsense_sim.hosting_capacity.qsts import DEFAULT_STEPS_PER_DAY, DEFAULT_TOTAL_STEPS
 from gridsense_sim.hosting_capacity.qsts_duration import find_hosting_capacity_duration, result_to_dict
@@ -141,6 +142,9 @@ def _reject_unsupported_three_phase(kw: dict) -> None:
                          "(--critical-point-from-series needs a balanced network).")
     if kw.get("load_multipliers") is not None:
         raise ValueError("Per-load multipliers are not supported for three-phase networks.")
+    if kw.get("pv_power_factor", 1.0) != 1.0:
+        raise ValueError(f"pv_power_factor={kw['pv_power_factor']} is not supported for three-phase "
+                         "networks (--pv-power-factor needs a balanced network).")
 
 
 def _run_deterministic(net: pp.pandapowerNet, network: str, kw: dict) -> dict:
@@ -245,7 +249,7 @@ def _run_unbalanced_stochastic(net: pp.pandapowerNet, network: str, kw: dict) ->
     model = kw.pop("adoption_model", None)
     if model is not None:
         kw["adoption_fraction"] = tuple(model.adoption_fraction)
-    for k in ("pv_scale", "load_multipliers"):
+    for k in ("pv_scale", "load_multipliers", "pv_power_factor"):
         kw.pop(k, None)
     r = estimate_hosting_capacity_unbalanced_stochastic(net, network, **kw)
     # An infinite quantile (censored scenarios) becomes lambda_max = None and
@@ -551,6 +555,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--source-vm-pu", type=float, default=None,
                    help="Override the source voltage of three-phase networks (IEEE European LV is "
                         "specified at 1.05 pu).")
+    p.add_argument("--pv-power-factor", type=float, default=1.0,
+                   help="Fixed inductive power factor of the study PV (Q = -P tan(acos(pf)), inverter "
+                        f"rated S = P / pf). 1.0 = unity (default); allowed range [{MIN_PV_POWER_FACTOR}, 1]. "
+                        "Balanced networks only. Recorded in conditions.pv_power_factor.")
     p.add_argument("--existing-pv", default="remove", choices=EXISTING_PV_POLICIES,
                    help="PV already installed in the network (SimBench grids): 'remove' = capacity "
                         "on an empty network (default, comparable across networks); 'keep' = "
@@ -613,6 +621,8 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
     checks = [
         (args.load_scale is None or args.load_scale > 0, "--load-scale must be > 0"),
         (args.tolerance > 0, "--tolerance must be > 0"),
+        (MIN_PV_POWER_FACTOR <= args.pv_power_factor <= 1.0,
+         f"--pv-power-factor must be in [{MIN_PV_POWER_FACTOR}, 1]"),
         (0 < args.mc_alpha < 1, "--mc-alpha must be in (0, 1)"),
         (args.mc_n_scenarios >= 1, "--mc-n-scenarios must be >= 1"),
         (0 < args.mc_adoption_min <= args.mc_adoption_max <= 1,
@@ -670,6 +680,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     _warn_underpowered(args)
     common = {"framework": args.framework, "tolerance": args.tolerance}
+    if args.pv_power_factor != 1.0:  # unity is every estimator's default: old rows keep their params
+        common["pv_power_factor"] = args.pv_power_factor
     qsts_kwargs: dict[str, Any] = {
         **common,
         "total_steps": args.qsts_total_steps,
@@ -746,7 +758,7 @@ def main(argv: list[str] | None = None) -> None:
                     cp.step, real.local_index[cp.step], cp.load_mult, cp.pv_mult)
     if three_phase:
         try:  # fail before any power flow, not per method after the network is built
-            _reject_unsupported_three_phase(det_scales)
+            _reject_unsupported_three_phase({**common, **det_scales})
         except ValueError as exc:
             raise SystemExit(str(exc)) from None
     if real is not None and "qsts" in args.methods:

@@ -79,7 +79,8 @@ class BatchedModel:
     load_p: np.ndarray           # (n_loads,) MW at multiplier 1 (scaling and in_service applied)
     load_q: np.ndarray           # (n_loads,)
     load_pos: np.ndarray         # (n_loads,) position in I, -1 if the load bus is isolated
-    pv_base: np.ndarray          # (n_inj,) MW of study PV per bus at lambda = 1 and full output
+    pv_base: np.ndarray          # (n_inj,) MVA (complex) of study PV per bus at lambda = 1, full output;
+                                 # the imaginary part is the reactive power of a fixed power factor
     inj_buses: tuple[int, ...]   # one representative pandapower bus per injection position
     check: dict = field(default_factory=dict)
 
@@ -135,6 +136,7 @@ def build_model(
     pv_mw_per_bus: dict[int, float],
     *,
     check_tolerance: float = 1e-6,
+    pv_q_per_p: float = 0.0,
 ) -> BatchedModel:
     """Extract a :class:`BatchedModel` from ``net`` (not mutated).
 
@@ -144,6 +146,9 @@ def build_model(
         pv_mw_per_bus: Study PV per bus at ``lambda = 1`` (see ``PVAllocation``).
         check_tolerance: The model's own solution of the reference state must
             match pandapower within this (voltage in pu, loading in % / 100).
+        pv_q_per_p: Reactive power of the study PV per unit of active power
+            (generator convention; negative = absorbing). ``0.0`` is unity
+            power factor. See ``hosting_capacity.allocation.reactive_per_active``.
 
     Raises:
         UnsupportedNetworkError: unsupported element, or the self-check failed.
@@ -263,7 +268,7 @@ def build_model(
         line_const=line_const, line_map=line_map, line_scale=line_scale,
         trafo_const=trafo_const, trafo_map=trafo_map, trafo_scale=trafo_scale,
         s_fixed=s_fixed_bus[inj], load_p=load_p, load_q=load_q, load_pos=pos_inj[load_ppc],
-        pv_base=pv_bus[inj], inj_buses=tuple(int(np.flatnonzero(lookup == b)[0]) for b in inj),
+        pv_base=pv_bus[inj] * (1.0 + 1j * pv_q_per_p), inj_buses=tuple(int(np.flatnonzero(lookup == b)[0]) for b in inj),
     )
     model.check = _self_check(model, net, check_tolerance)
     return model

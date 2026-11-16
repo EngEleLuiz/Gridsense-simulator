@@ -35,7 +35,7 @@ import pandapower as pp
 
 from ..accel.model import build_model
 from ..accel.solver import BatchedSolver, device_info
-from .allocation import PVAllocation, proportional_to_load
+from .allocation import PVAllocation, proportional_to_load, reactive_per_active
 from .duration import DurationCriterion, WeekThresholds, get_criterion, weekly_capacity
 from .errors import BaselineInfeasibleError
 from .limits import limits_for
@@ -47,6 +47,7 @@ from .qsts_duration import (
     _exceeded_at,
     _kinds,
     _plan_windows,
+    lower_side_at_capacity,
 )
 from .scope import voltage_scope_buses
 from .search import SEARCH_DEFAULTS
@@ -58,7 +59,8 @@ _EPS = 1e-6
 class _BatchedEvaluator:
     """Batched counterpart of ``qsts_duration._Evaluator``."""
 
-    def __init__(self, net, network_name, ts, allocation, criterion, load_matrix, device, dtype, memory_mb):
+    def __init__(self, net, network_name, ts, allocation, criterion, load_matrix, device, dtype, memory_mb,
+                 q_per_p=0.0):
         self.limits = limits_for(network_name, None)
         net = copy.deepcopy(net)
         self.allocation = allocation or proportional_to_load(net)
@@ -71,7 +73,7 @@ class _BatchedEvaluator:
             if load_matrix.shape != (ts.n_steps, len(net.load)):
                 raise ValueError(f"load_matrix must have shape {(ts.n_steps, len(net.load))}.")
         self.load_matrix = load_matrix
-        self.model = build_model(net, self.scope, self.allocation.base_mw_per_bus)
+        self.model = build_model(net, self.scope, self.allocation.base_mw_per_bus, pv_q_per_p=q_per_p)
         self.solver = BatchedSolver(self.model, device=device, dtype=dtype, memory_mb=memory_mb)
         self.kinds = _kinds(criterion)
 
@@ -228,6 +230,7 @@ def _verify(ev: _BatchedEvaluator, idx: np.ndarray, lam: float, crit: DurationCr
         "any_bus_upper_drp": any_p / n, "any_bus_upper_drc": any_c / n,
         "worst_bus_upper_drp": float(per_p.max() / n), "worst_bus_upper_drc": float(per_c.max() / n),
         "within_regulatory_allowance_per_bus": bool(per_p.max() <= allow_p and per_c.max() <= allow_c),
+        **lower_side_at_capacity(vmat, crit),
     }
 
 
@@ -249,6 +252,7 @@ def find_hosting_capacity_duration_batched(
     device: str = "auto",
     dtype: str = "float64",
     memory_mb: int = 1024,
+    pv_power_factor: float = 1.0,
 ) -> QstsDurationResult:
     """Hosting capacity under a weekly duration criterion, batched solver.
 
@@ -268,7 +272,8 @@ def find_hosting_capacity_duration_batched(
     crit = get_criterion(criterion)
     ts = series
     res_min, per_window, matches, notes, wanted = _plan_windows(ts, crit, windows)
-    ev = _BatchedEvaluator(net, network_name, ts, allocation, crit, load_matrix, device, dtype, memory_mb)
+    ev = _BatchedEvaluator(net, network_name, ts, allocation, crit, load_matrix, device, dtype, memory_mb,
+                           reactive_per_active(pv_power_factor))
     results: list[WindowResult] = []
     warm: float | None = lambda_start
     for w in wanted:
@@ -298,7 +303,7 @@ def find_hosting_capacity_duration_batched(
     info = {**device_info(ev.solver.device), "dtype": dtype, "model_check": ev.model.check}
     return _build_result(network_name, crit, ts, results, verification, ev.allocation, len(ev.scope),
                          tolerance, res_min, matches, notes, ev.power_flows,
-                         backend="torch", backend_info=info)
+                         backend="torch", backend_info=info, pv_power_factor=pv_power_factor)
 
 
 __all__ = ["find_hosting_capacity_duration_batched"]

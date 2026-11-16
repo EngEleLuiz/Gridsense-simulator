@@ -35,7 +35,9 @@ class StudyConditions:
         load_scale: Multiplier on nominal load P and Q, or ``None`` when
             load is time-varying (QSTS).
         n_voltage_buses: Size of the voltage-check scope.
-        pv_power_factor: PV reactive behaviour (1.0 = unity).
+        pv_power_factor: Fixed inductive power factor of the study PV
+            (1.0 = unity; below 1 the inverters absorb reactive power, see
+            :func:`.allocation.reactive_per_active`).
     """
 
     network_name: str
@@ -54,6 +56,7 @@ class StudyConditions:
         limits: NetworkLimits,
         load_scale: float | None,
         n_voltage_buses: int,
+        pv_power_factor: float = 1.0,
     ) -> "StudyConditions":
         return cls(
             network_name=network_name,
@@ -63,6 +66,7 @@ class StudyConditions:
             v_max_pu=limits.v_max_pu,
             load_scale=load_scale,
             n_voltage_buses=n_voltage_buses,
+            pv_power_factor=pv_power_factor,
         )
 
 

@@ -44,7 +44,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandapower as pp
 
-from .allocation import PVAllocation, apply_allocation, proportional_to_load
+from .allocation import PVAllocation, apply_allocation, proportional_to_load, reactive_per_active
 from .baseline import require_feasible_baseline
 from .conditions import DEFAULT_CRITICAL_LOAD_SCALE, StudyConditions, apply_load_multipliers, apply_load_scale
 from .limits import limits_for
@@ -168,6 +168,7 @@ def estimate_hosting_capacity(
     seed: int | None = 42,
     pv_scale: float = 1.0,
     load_multipliers=None,
+    pv_power_factor: float = 1.0,
 ) -> StochasticHCEstimate:
     """Monte Carlo over adoption scenarios; one bisection per scenario.
 
@@ -184,6 +185,7 @@ def estimate_hosting_capacity(
             operating point (``pv_mult`` of a critical point taken from a
             series). ``lambda`` then measures *installed* capacity, as in
             QSTS; 1.0 keeps the classic snapshot meaning.
+        pv_power_factor: Fixed inductive power factor of the PV (1.0 = unity).
 
     Raises:
         BaselineInfeasibleError: violation at PV = 0.
@@ -193,6 +195,7 @@ def estimate_hosting_capacity(
     if not 0.0 < pv_scale <= 1.5:
         raise ValueError("pv_scale must be in (0, 1.5].")
     model = adoption_model or AdoptionModel()
+    q_per_p = reactive_per_active(pv_power_factor)
     limits = limits_for(network_name, framework)
     base_net = copy.deepcopy(net)
     nominal = proportional_to_load(base_net)
@@ -202,7 +205,7 @@ def estimate_hosting_capacity(
         apply_load_multipliers(base_net, load_multipliers)
     apply_load_scale(base_net, load_scale)
     scope = voltage_scope_buses(base_net, limits)
-    conditions = StudyConditions.build(network_name, limits, load_scale, len(scope))
+    conditions = StudyConditions.build(network_name, limits, load_scale, len(scope), pv_power_factor)
     require_feasible_baseline(
         copy.deepcopy(base_net), limits, scope, context=f"(stochastic, load_scale={load_scale})"
     )
@@ -216,7 +219,7 @@ def estimate_hosting_capacity(
         work = copy.deepcopy(base_net)
 
         def _violates(lam: float, _w: pp.pandapowerNet = work, _s: PVAllocation = shape) -> bool:
-            apply_allocation(_w, _s, lam)
+            apply_allocation(_w, _s, lam, q_per_p)
             return check_violations(_w, limits, scope).has_violation
 
         out = bisect_max_feasible(
@@ -228,7 +231,7 @@ def estimate_hosting_capacity(
         binding = None
         pfs = out.evaluations
         if out.bounded and out.lambda_fail is not None:
-            apply_allocation(work, shape, out.lambda_fail)
+            apply_allocation(work, shape, out.lambda_fail, q_per_p)
             binding = check_violations(work, limits, scope).binding_constraint()
             pfs += 1
         results.append(

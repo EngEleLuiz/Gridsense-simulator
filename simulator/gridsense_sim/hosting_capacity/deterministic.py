@@ -24,7 +24,7 @@ from dataclasses import dataclass
 
 import pandapower as pp
 
-from .allocation import PVAllocation, apply_allocation, proportional_to_load
+from .allocation import PVAllocation, apply_allocation, proportional_to_load, reactive_per_active
 from .baseline import require_feasible_baseline
 from .conditions import DEFAULT_CRITICAL_LOAD_SCALE, StudyConditions, apply_load_multipliers, apply_load_scale
 from .limits import limits_for
@@ -75,6 +75,7 @@ def find_hosting_capacity(
     max_bisections: int = SEARCH_DEFAULTS.max_bisections,
     pv_scale: float = 1.0,
     load_multipliers=None,
+    pv_power_factor: float = 1.0,
 ) -> DeterministicHCResult:
     """Deterministic HC by monotone bisection on ``lambda_``.
 
@@ -89,6 +90,8 @@ def find_hosting_capacity(
             (from :func:`.study_design.critical_point`); ``lambda`` and the
             reported MW are then *installed* capacity, as in QSTS.
             Pass ``1.0`` to reproduce the old nominal-load number.
+        pv_power_factor: Fixed inductive power factor of the PV (1.0 = unity,
+            the default). See :func:`.allocation.reactive_per_active`.
         tolerance, max_expansions, max_bisections: Search controls.
 
     Raises:
@@ -96,6 +99,7 @@ def find_hosting_capacity(
         ValueError: empty allocation or invalid arguments.
     """
     limits = limits_for(network_name, framework)
+    q_per_p = reactive_per_active(pv_power_factor)
     work = copy.deepcopy(net)
     allocation = allocation or proportional_to_load(work)  # nominal basis
     allocation.require_non_empty()
@@ -111,15 +115,15 @@ def find_hosting_capacity(
         apply_load_multipliers(work, load_multipliers)
     apply_load_scale(work, load_scale)
     scope = voltage_scope_buses(work, limits)
-    conditions = StudyConditions.build(network_name, limits, load_scale, len(scope))
+    conditions = StudyConditions.build(network_name, limits, load_scale, len(scope), pv_power_factor)
 
-    apply_allocation(work, allocation, 0.0)
+    apply_allocation(work, allocation, 0.0, q_per_p)
     require_feasible_baseline(
         work, limits, scope, context=f"(deterministic, load_scale={load_scale})"
     )
 
     def _violates(lam: float) -> bool:
-        apply_allocation(work, allocation, lam)
+        apply_allocation(work, allocation, lam, q_per_p)
         return check_violations(work, limits, scope).has_violation
 
     outcome = bisect_max_feasible(
@@ -132,11 +136,11 @@ def find_hosting_capacity(
 
     binding: str | None = None
     if outcome.bounded and outcome.lambda_fail is not None:
-        apply_allocation(work, allocation, outcome.lambda_fail)
+        apply_allocation(work, allocation, outcome.lambda_fail, q_per_p)
         binding = check_violations(work, limits, scope).binding_constraint()
         pf_count += 1
 
-    apply_allocation(work, allocation, outcome.lambda_max)
+    apply_allocation(work, allocation, outcome.lambda_max, q_per_p)
     at_hc = check_violations(work, limits, scope)
     pf_count += 1
 
