@@ -22,7 +22,8 @@ from datetime import datetime, timezone
 from importlib import metadata
 from pathlib import Path
 
-TRACKED_PACKAGES: tuple[str, ...] = ("pandapower", "numpy", "scipy", "pandas", "numba")
+TRACKED_PACKAGES: tuple[str, ...] = ("pandapower", "numpy", "scipy", "pandas", "numba",
+                                     "torch", "simbench", "pyarrow")
 
 
 @dataclass(frozen=True)

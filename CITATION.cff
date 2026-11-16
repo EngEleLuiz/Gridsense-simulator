@@ -1,0 +1,23 @@
+# Fill in the author(s) and, once a release is archived, the DOI and version.
+# GitHub shows "Cite this repository" from this file.
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "GridSense Simulator: hosting capacity of distributed PV by deterministic, stochastic and quasi-static time-series methods"
+abstract: >-
+  Experimental infrastructure for comparing hosting-capacity methods on
+  low-voltage networks under regulatory voltage criteria (ANEEL PRODIST
+  Module 8 and EN 50160), with open datasets, frozen experiment protocols and
+  per-result provenance.
+authors:
+  - name: "GridSense Contributors"
+repository-code: "https://github.com/EngEleLuiz/Gridsense-simulator"
+license: MIT
+keywords:
+  - hosting capacity
+  - photovoltaic generation
+  - low-voltage distribution networks
+  - quasi-static time series
+  - power quality
+  - PRODIST
+  - EN 50160

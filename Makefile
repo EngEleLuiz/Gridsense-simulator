@@ -17,7 +17,7 @@ DBT_ARGS := --project-dir transform --profiles-dir transform
         load-timescale seed-scope dbt-seed dbt-run dbt-test dbt-build dbt-docs \
         hc-study hc-qsts hc-load api-run \
         data-list data-qc series-flo hc-qsts-real test-datasets test-real-data \
-        test-accel benchmark protocol-v2 protocol-v3 series-london-5min report validate-opendss \
+        test-accel benchmark protocol-v2 protocol-v3 series-london-5min report validate-opendss env-lock \
         test test-simulator test-hc test-ingestion test-api lint
 
 help:
@@ -151,6 +151,10 @@ series-london-5min: ## 5-minute London series for the resolution curve of protoc
 		--pv uk_pv --pv-file data/raw/uk_pv --pv-opt start=2018-05-25 --pv-opt end=2018-07-10 \
 		--site london --start 2018-06-01 --days 28 --steps-per-day 288 \
 		--out data/series/london_2018_06_5min.parquet
+
+env-lock: ## Freeze the exact package versions of this environment (commit it with the results tag)
+	$(PYTHON) -m pip freeze --exclude-editable > protocol/environment.lock.txt
+	@echo "wrote protocol/environment.lock.txt ($$(wc -l < protocol/environment.lock.txt) packages)"
 
 validate-opendss: ## pandapower vs OpenDSS on the panel (needs simulator[validation])
 	$(PYTHON) scripts/validate_against_opendss.py

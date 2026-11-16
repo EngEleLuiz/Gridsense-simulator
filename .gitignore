@@ -17,6 +17,7 @@ transform/.user.yml
 .env
 
 # Local tooling output
+Claude outputs/
 .ruff_cache/
 .coverage
 coverage.xml
