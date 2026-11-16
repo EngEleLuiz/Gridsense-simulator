@@ -39,9 +39,9 @@ Without a magnetising branch (``cigre_lv``) the two engines agree to about
 programs represent the no-load losses and the magnetising current of a
 transformer differently (the difference vanishes when ``pfe_kw`` and
 ``i0_percent`` are set to zero, and does not depend on pandapower's
-``trafo_model``). That is two orders of magnitude below the voltage margin
-that decides a capacity at the search tolerance, and the deterministic
-capacities of the two engines coincide.
+``trafo_model``). That is an order of magnitude below the voltage change of
+one search tolerance (about 6e-4 pu per 0.01 of lambda on ``cigre_lv``), and
+the deterministic capacities of the two engines coincide.
 """
 
 from __future__ import annotations

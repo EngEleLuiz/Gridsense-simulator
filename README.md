@@ -29,6 +29,7 @@ account, managed service, or paid license is required at any phase.
 | 7.4 — Three-phase + dashboards | ✅ | Unbalanced hosting capacity on the IEEE European LV feeder (UK), balanced-equivalent control on the same solver; five new Grafana dashboards validated against real payloads. See [`docs/CHANGES_phase7.4-unbalanced-and-dashboards.md`](docs/CHANGES_phase7.4-unbalanced-and-dashboards.md). |
 | 7.5 — Experiment protocol | ✅ | Frozen protocol v1 (49 runs, ~11 h) with a resumable executor; PRODIST checked against REN 956/2021; series and study conditions exposed in the dbt mart. See [`docs/EXPERIMENT_PROTOCOL.md`](docs/EXPERIMENT_PROTOCOL.md). |
 | 8 — Acceleration + Brazilian networks | ✅ | Batched power flow in PyTorch (CPU or GPU) for the duration-criterion QSTS, checked against pandapower; networks and criteria as registered data (`--network-file`, `--qsts-criterion-file`); converter from the Brazilian BDGD to pandapower feeders (no data shipped). See [`docs/ACCELERATION.md`](docs/ACCELERATION.md), [`docs/BDGD.md`](docs/BDGD.md) and [`docs/CHANGES_phase8.md`](docs/CHANGES_phase8.md). |
+| 8.1 — Rigor: validation, sensitivities, analysis | ✅ | Cross-check against OpenDSS; PV power factor and source voltage as study conditions; protocol v3 (sensitivity addendum); statistics, tables and figures generated from the results; hypotheses and decision rules written before the runs; verification notes on the criteria. See [`docs/CHANGES_phase8.1-rigor.md`](docs/CHANGES_phase8.1-rigor.md), [`docs/VALIDATION.md`](docs/VALIDATION.md) and [`docs/HYPOTHESES.md`](docs/HYPOTHESES.md). |
 | 9 — Certified surrogate + open dataset | 🔲 planned (prototype outside the repo) | Physics prior (LinDistFlow) + learned residual with conformal screening, as an accelerator inside the Phase 6 estimators. Renumbered from 7, then 8: its large speed-up needs the duration criterion τ̄ and benefits from real-data training. |
 | 10 — Streaming HC / operating envelope | 🔲 planned | Continuous envelope recomputation over the existing Kafka pipeline. |
 
@@ -254,7 +255,9 @@ python scripts/run_hosting_capacity_study.py --network cigre_lv \
 | `--run-label` | Free label stored in `params.run_label` (set automatically by `scripts/run_protocol.py`). |
 | `--qsts-aggregate-load` | SimBench own profiles only: every load follows the weighted aggregate (sensitivity). |
 | `--phase-model` | Three-phase feeders (`ieee_european_lv_offpeak`/`_onpeak`): `unbalanced` (default) or `balanced_equivalent`. |
-| `--source-vm-pu` | Override the feeder source voltage (the IEEE European LV feeder is specified at 1.05 pu). |
+| `--source-vm-pu` | Override the voltage of the external grid: the feeder source of three-phase networks (the IEEE European LV feeder is specified at 1.05 pu), or every external grid of a balanced network (sensitivity to the fixed tap). Recorded with the result. |
+| `--pv-power-factor` | Fixed inductive power factor of the study PV, 0.8 to 1 (default 1). Q = −P·tan(acos pf); the inverter is assumed rated S = P / pf, so λ still measures active power. Balanced networks only. |
+| `--require-verified-criterion` | Refuse a duration criterion still marked `to_verify` (see `protocol/criteria/README.md`). |
 | `--existing-pv` | `remove` (default: capacity on an empty grid) or `keep` (additional capacity). Recorded in `params`. |
 | `--qsts-network-profiles` | SimBench grids only: QSTS on the grid's own per-load profiles (15 min, 2016), with `--qsts-start`/`--qsts-days`. |
 | `--critical-point-from-series` | Deterministic/stochastic use the operating point taken from `--qsts-series` (max PV, min load); λ = installed capacity. |

@@ -79,8 +79,14 @@ The gaps therefore separate two effects: the cost of choosing the critical point
 | London load, not Brazilian | Explicit delimitation; sensitivity with other load sources is possible (SimBench, Ausgrid) |
 | Benchmark network, balanced | Delimitation; per-bus diversity planned |
 | PV fleet of ~10 km, not one feeder | Fleet average is smoother than a single roof; noted |
-| PRODIST band edges from secondary sources | Marked `to_verify`; confirm in the Module 8 revision in force |
-| Tap fixed (C8) | MV/LV distribution transformers usually have off-load taps (to confirm) |
+| PRODIST band edges from secondary sources | Marked `to_verify` with a `verification` note (they agree with the ARSESP guide; Annex VIII of REN 956/2021 still to be read); `--require-verified-criteria` refuses to run on them |
+| Tap fixed (C8) | MV/LV distribution transformers usually have off-load taps (to confirm); protocol v3, group H, measures the dependence on the source voltage |
+| PV at unity power factor | Protocol v3, group G (0.95, 0.92 inductive) |
+| 10-minute criterion on 15-minute data (main case) | Recorded per result; bias curve measured on 5-minute London data (protocol v3, group I) |
+| Adoption model of the stochastic method | Protocol v3, group J (low and high adoption ranges, 200 scenarios) |
+| One power-flow engine | Cross-check against OpenDSS, [`VALIDATION.md`](VALIDATION.md); not covered: `lv_schutterwald`, three-phase |
+| One capacity = one week of one year | Weekly distribution, gap to the second-lowest week and a block-bootstrap interval for p10 in the report; between-year variability is not measured |
+| Conclusions chosen after the results | Decision rules written first, [`HYPOTHESES.md`](HYPOTHESES.md) |
 
 ## Commands (one PV year)
 
