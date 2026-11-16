@@ -29,6 +29,10 @@ data = [
 plots = [
     "matplotlib>=3.7",
 ]
+# Independent power-flow check, scripts/validate_against_opendss.py (EPRI OpenDSS engine).
+validation = [
+    "opendssdirect.py>=0.9",
+]
 # Batched solver (Phase 8). This pulls the default PyTorch build of your platform
 # (CPU-only on Windows). For CUDA install the wheel from pytorch.org first:
 # see docs/ACCELERATION.md.
