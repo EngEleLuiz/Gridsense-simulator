@@ -25,6 +25,10 @@ data = [
     "pyarrow>=14",
     "simbench>=1.5",
 ]
+# Figures of scripts/analyze_protocol.py --figures.
+plots = [
+    "matplotlib>=3.7",
+]
 # Batched solver (Phase 8). This pulls the default PyTorch build of your platform
 # (CPU-only on Windows). For CUDA install the wheel from pytorch.org first:
 # see docs/ACCELERATION.md.
