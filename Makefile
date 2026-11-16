@@ -17,7 +17,7 @@ DBT_ARGS := --project-dir transform --profiles-dir transform
         load-timescale seed-scope dbt-seed dbt-run dbt-test dbt-build dbt-docs \
         hc-study hc-qsts hc-load api-run \
         data-list data-qc series-flo hc-qsts-real test-datasets test-real-data \
-        test-accel benchmark protocol-v2 \
+        test-accel benchmark protocol-v2 protocol-v3 series-london-5min report \
         test test-simulator test-hc test-ingestion test-api lint
 
 help:
@@ -141,6 +141,20 @@ benchmark: ## pandapower vs batched solver per power flow (needs PyTorch)
 
 protocol-v2: ## Run the accelerated protocol (same runs as v1, batched QSTS)
 	$(PYTHON) scripts/run_protocol.py --protocol protocol/protocol-v2.json
+
+protocol-v3: ## Run the sensitivity addendum (power factor, source voltage, resolution, adoption)
+	$(PYTHON) scripts/run_protocol.py --protocol protocol/protocol-v3.json
+
+series-london-5min: ## 5-minute London series for the resolution curve of protocol v3 (needs LCL + uk_pv files)
+	$(PYTHON) -m gridsense_sim.datasets build-series --load lcl --load-file $${LCL_FILE:?set LCL_FILE} \
+		--load-opt start=2013-01-01 --load-opt end=2014-01-01 \
+		--pv uk_pv --pv-file data/raw/uk_pv --pv-opt start=2018-05-25 --pv-opt end=2018-07-10 \
+		--site london --start 2018-06-01 --days 28 --steps-per-day 288 \
+		--out data/series/london_2018_06_5min.parquet
+
+report: ## Tables and figures of the results chapter from data/protocol-v2 (+ v3 when present)
+	$(PYTHON) scripts/analyze_protocol.py data/protocol-v2 --figures \
+		$$( [ -d data/protocol-v3 ] && echo "--sensitivity data/protocol-v3" )
 
 test-real-data: ## Same checks on genuine raw files in $$GRIDSENSE_REAL_DATA_DIR
 	GRIDSENSE_REAL_DATA_DIR=$${GRIDSENSE_REAL_DATA_DIR:-data/raw/real-samples} \

@@ -1,0 +1,2098 @@
+{
+ "id": "protocol-v3",
+ "description": "Sensitivity addendum to protocol-v2: one assumption varied per group (PV power factor, source voltage, temporal resolution, adoption model). Base cases are runs of protocol-v2 and are not repeated here.",
+ "output_dir": "data/protocol-v3",
+ "base_protocol": {
+  "id": "protocol-v2",
+  "sha256": "69847fe8ee12de8e7a1893e152ca30f3b576c7cb20da398168573da0fbf51303",
+  "output_dir": "data/protocol-v2"
+ },
+ "fixed_parameters": {
+  "tolerance": 0.01,
+  "critical_point_rule": "min_load_high_pv",
+  "critical_point_pv_fraction": 0.9,
+  "stochastic_alpha": 0.1,
+  "stochastic_scenarios": 60,
+  "adoption_fraction": [
+   0.3,
+   1.0
+  ],
+  "existing_pv": "remove",
+  "literature_load_scale": 0.25,
+  "simbench_year_window": [
+   "2016-01-04",
+   357
+  ],
+  "london_radius_km": 30,
+  "normalize": "source_peak",
+  "power_factors": [
+   0.95,
+   0.92
+  ],
+  "source_voltages_pu": [
+   0.98,
+   1.0,
+   1.02,
+   1.04
+  ],
+  "london_block_minutes": [
+   10,
+   15,
+   30,
+   60
+  ],
+  "london_reference_block_minutes": 10,
+  "adoption_ranges": [
+   [
+    0.1,
+    0.4
+   ],
+   [
+    0.7,
+    1.0
+   ]
+  ]
+ },
+ "runs": [
+  {
+   "group": "G_power_factor",
+   "name": "G-cigre_lv-prodist-pf0.95",
+   "args": [
+    "--network",
+    "cigre_lv",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--pv-power-factor",
+    "0.95"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.95,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-cigre_lv-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "G_power_factor",
+   "name": "G-cigre_lv-prodist-pf0.92",
+   "args": [
+    "--network",
+    "cigre_lv",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--pv-power-factor",
+    "0.92"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.92,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-cigre_lv-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "G_power_factor",
+   "name": "G-kerber_landnetz-prodist-pf0.95",
+   "args": [
+    "--network",
+    "kerber_landnetz",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--pv-power-factor",
+    "0.95"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.95,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-kerber_landnetz-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "G_power_factor",
+   "name": "G-kerber_landnetz-prodist-pf0.92",
+   "args": [
+    "--network",
+    "kerber_landnetz",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--pv-power-factor",
+    "0.92"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.92,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-kerber_landnetz-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "G_power_factor",
+   "name": "G-kerber_vorstadt-prodist-pf0.95",
+   "args": [
+    "--network",
+    "kerber_vorstadt",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--pv-power-factor",
+    "0.95"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.95,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-kerber_vorstadt-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "G_power_factor",
+   "name": "G-kerber_vorstadt-prodist-pf0.92",
+   "args": [
+    "--network",
+    "kerber_vorstadt",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--pv-power-factor",
+    "0.92"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.92,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-kerber_vorstadt-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "G_power_factor",
+   "name": "G-simbench_lv_rural1-prodist-pf0.95",
+   "args": [
+    "--network",
+    "simbench_lv_rural1",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--pv-power-factor",
+    "0.95"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.95,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_rural1-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "G_power_factor",
+   "name": "G-simbench_lv_rural1-prodist-pf0.92",
+   "args": [
+    "--network",
+    "simbench_lv_rural1",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--pv-power-factor",
+    "0.92"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.92,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_rural1-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "G_power_factor",
+   "name": "G-simbench_lv_semiurb4-prodist-pf0.95",
+   "args": [
+    "--network",
+    "simbench_lv_semiurb4",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--pv-power-factor",
+    "0.95"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.95,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_semiurb4-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "G_power_factor",
+   "name": "G-simbench_lv_semiurb4-prodist-pf0.92",
+   "args": [
+    "--network",
+    "simbench_lv_semiurb4",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--pv-power-factor",
+    "0.92"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.92,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_semiurb4-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "G_power_factor",
+   "name": "G-simbench_lv_urban6-prodist-pf0.95",
+   "args": [
+    "--network",
+    "simbench_lv_urban6",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--pv-power-factor",
+    "0.95"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.95,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_urban6-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "G_power_factor",
+   "name": "G-simbench_lv_urban6-prodist-pf0.92",
+   "args": [
+    "--network",
+    "simbench_lv_urban6",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--pv-power-factor",
+    "0.92"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.92,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_urban6-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "G_power_factor",
+   "name": "G-lv_schutterwald-prodist-pf0.95",
+   "args": [
+    "--network",
+    "lv_schutterwald",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--pv-power-factor",
+    "0.95"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.95,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-lv_schutterwald-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "G_power_factor",
+   "name": "G-lv_schutterwald-prodist-pf0.92",
+   "args": [
+    "--network",
+    "lv_schutterwald",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--pv-power-factor",
+    "0.92"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.92,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-lv_schutterwald-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "G_power_factor",
+   "name": "G-simbench_lv_rural1-drp-drc-pf0.92",
+   "args": [
+    "--network",
+    "simbench_lv_rural1",
+    "--methods",
+    "qsts",
+    "--qsts-network-profiles",
+    "--qsts-start",
+    "2016-01-04",
+    "--qsts-days",
+    "357",
+    "--qsts-criterion",
+    "prodist_m8_drp_drc",
+    "--qsts-backend",
+    "torch",
+    "--device",
+    "auto",
+    "--pv-power-factor",
+    "0.92"
+   ],
+   "estimate_min": 2,
+   "backend": "torch",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.92,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "D-simbench_lv_rural1-drp-drc",
+    "method": "qsts"
+   }
+  },
+  {
+   "group": "G_power_factor",
+   "name": "G-simbench_lv_semiurb4-drp-drc-pf0.92",
+   "args": [
+    "--network",
+    "simbench_lv_semiurb4",
+    "--methods",
+    "qsts",
+    "--qsts-network-profiles",
+    "--qsts-start",
+    "2016-01-04",
+    "--qsts-days",
+    "357",
+    "--qsts-criterion",
+    "prodist_m8_drp_drc",
+    "--qsts-backend",
+    "torch",
+    "--device",
+    "auto",
+    "--pv-power-factor",
+    "0.92"
+   ],
+   "estimate_min": 2,
+   "backend": "torch",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.92,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "D-simbench_lv_semiurb4-drp-drc",
+    "method": "qsts"
+   }
+  },
+  {
+   "group": "G_power_factor",
+   "name": "G-simbench_lv_urban6-drp-drc-pf0.92",
+   "args": [
+    "--network",
+    "simbench_lv_urban6",
+    "--methods",
+    "qsts",
+    "--qsts-network-profiles",
+    "--qsts-start",
+    "2016-01-04",
+    "--qsts-days",
+    "357",
+    "--qsts-criterion",
+    "prodist_m8_drp_drc",
+    "--qsts-backend",
+    "torch",
+    "--device",
+    "auto",
+    "--pv-power-factor",
+    "0.92"
+   ],
+   "estimate_min": 2,
+   "backend": "torch",
+   "factor": {
+    "name": "pv_power_factor",
+    "value": 0.92,
+    "base_value": 1.0
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "D-simbench_lv_urban6-drp-drc",
+    "method": "qsts"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-cigre_lv-prodist-src0.98",
+   "args": [
+    "--network",
+    "cigre_lv",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "0.98"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 0.98,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-cigre_lv-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-cigre_lv-prodist-src1.00",
+   "args": [
+    "--network",
+    "cigre_lv",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.00"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.0,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-cigre_lv-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-cigre_lv-prodist-src1.02",
+   "args": [
+    "--network",
+    "cigre_lv",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.02"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.02,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-cigre_lv-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-cigre_lv-prodist-src1.04",
+   "args": [
+    "--network",
+    "cigre_lv",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.04"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.04,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-cigre_lv-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-kerber_landnetz-prodist-src0.98",
+   "args": [
+    "--network",
+    "kerber_landnetz",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "0.98"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 0.98,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-kerber_landnetz-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-kerber_landnetz-prodist-src1.00",
+   "args": [
+    "--network",
+    "kerber_landnetz",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.00"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.0,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-kerber_landnetz-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-kerber_landnetz-prodist-src1.02",
+   "args": [
+    "--network",
+    "kerber_landnetz",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.02"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.02,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-kerber_landnetz-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-kerber_landnetz-prodist-src1.04",
+   "args": [
+    "--network",
+    "kerber_landnetz",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.04"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.04,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-kerber_landnetz-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-kerber_vorstadt-prodist-src0.98",
+   "args": [
+    "--network",
+    "kerber_vorstadt",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "0.98"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 0.98,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-kerber_vorstadt-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-kerber_vorstadt-prodist-src1.00",
+   "args": [
+    "--network",
+    "kerber_vorstadt",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.00"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.0,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-kerber_vorstadt-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-kerber_vorstadt-prodist-src1.02",
+   "args": [
+    "--network",
+    "kerber_vorstadt",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.02"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.02,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-kerber_vorstadt-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-kerber_vorstadt-prodist-src1.04",
+   "args": [
+    "--network",
+    "kerber_vorstadt",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.04"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.04,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-kerber_vorstadt-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_rural1-prodist-src0.98",
+   "args": [
+    "--network",
+    "simbench_lv_rural1",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "0.98"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 0.98,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_rural1-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_rural1-prodist-src1.00",
+   "args": [
+    "--network",
+    "simbench_lv_rural1",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.00"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.0,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_rural1-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_rural1-prodist-src1.02",
+   "args": [
+    "--network",
+    "simbench_lv_rural1",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.02"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.02,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_rural1-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_rural1-prodist-src1.04",
+   "args": [
+    "--network",
+    "simbench_lv_rural1",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.04"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.04,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_rural1-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_semiurb4-prodist-src0.98",
+   "args": [
+    "--network",
+    "simbench_lv_semiurb4",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "0.98"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 0.98,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_semiurb4-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_semiurb4-prodist-src1.00",
+   "args": [
+    "--network",
+    "simbench_lv_semiurb4",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.00"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.0,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_semiurb4-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_semiurb4-prodist-src1.02",
+   "args": [
+    "--network",
+    "simbench_lv_semiurb4",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.02"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.02,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_semiurb4-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_semiurb4-prodist-src1.04",
+   "args": [
+    "--network",
+    "simbench_lv_semiurb4",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.04"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.04,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_semiurb4-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_urban6-prodist-src0.98",
+   "args": [
+    "--network",
+    "simbench_lv_urban6",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "0.98"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 0.98,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_urban6-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_urban6-prodist-src1.00",
+   "args": [
+    "--network",
+    "simbench_lv_urban6",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.00"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.0,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_urban6-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_urban6-prodist-src1.02",
+   "args": [
+    "--network",
+    "simbench_lv_urban6",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.02"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.02,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_urban6-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_urban6-prodist-src1.04",
+   "args": [
+    "--network",
+    "simbench_lv_urban6",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.04"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.04,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-simbench_lv_urban6-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-lv_schutterwald-prodist-src0.98",
+   "args": [
+    "--network",
+    "lv_schutterwald",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "0.98"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 0.98,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-lv_schutterwald-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-lv_schutterwald-prodist-src1.00",
+   "args": [
+    "--network",
+    "lv_schutterwald",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.00"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.0,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-lv_schutterwald-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-lv_schutterwald-prodist-src1.02",
+   "args": [
+    "--network",
+    "lv_schutterwald",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.02"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.02,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-lv_schutterwald-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-lv_schutterwald-prodist-src1.04",
+   "args": [
+    "--network",
+    "lv_schutterwald",
+    "--methods",
+    "deterministic",
+    "--framework",
+    "prodist_m8_bt",
+    "--source-vm-pu",
+    "1.04"
+   ],
+   "estimate_min": 1,
+   "backend": "pandapower",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.04,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "A-lv_schutterwald-prodist_m8_bt",
+    "method": "deterministic"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_rural1-drp-drc-src0.98",
+   "args": [
+    "--network",
+    "simbench_lv_rural1",
+    "--methods",
+    "qsts",
+    "--qsts-network-profiles",
+    "--qsts-start",
+    "2016-01-04",
+    "--qsts-days",
+    "357",
+    "--qsts-criterion",
+    "prodist_m8_drp_drc",
+    "--qsts-backend",
+    "torch",
+    "--device",
+    "auto",
+    "--source-vm-pu",
+    "0.98"
+   ],
+   "estimate_min": 2,
+   "backend": "torch",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 0.98,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "D-simbench_lv_rural1-drp-drc",
+    "method": "qsts"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_rural1-drp-drc-src1.02",
+   "args": [
+    "--network",
+    "simbench_lv_rural1",
+    "--methods",
+    "qsts",
+    "--qsts-network-profiles",
+    "--qsts-start",
+    "2016-01-04",
+    "--qsts-days",
+    "357",
+    "--qsts-criterion",
+    "prodist_m8_drp_drc",
+    "--qsts-backend",
+    "torch",
+    "--device",
+    "auto",
+    "--source-vm-pu",
+    "1.02"
+   ],
+   "estimate_min": 2,
+   "backend": "torch",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.02,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "D-simbench_lv_rural1-drp-drc",
+    "method": "qsts"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_semiurb4-drp-drc-src0.98",
+   "args": [
+    "--network",
+    "simbench_lv_semiurb4",
+    "--methods",
+    "qsts",
+    "--qsts-network-profiles",
+    "--qsts-start",
+    "2016-01-04",
+    "--qsts-days",
+    "357",
+    "--qsts-criterion",
+    "prodist_m8_drp_drc",
+    "--qsts-backend",
+    "torch",
+    "--device",
+    "auto",
+    "--source-vm-pu",
+    "0.98"
+   ],
+   "estimate_min": 2,
+   "backend": "torch",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 0.98,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "D-simbench_lv_semiurb4-drp-drc",
+    "method": "qsts"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_semiurb4-drp-drc-src1.02",
+   "args": [
+    "--network",
+    "simbench_lv_semiurb4",
+    "--methods",
+    "qsts",
+    "--qsts-network-profiles",
+    "--qsts-start",
+    "2016-01-04",
+    "--qsts-days",
+    "357",
+    "--qsts-criterion",
+    "prodist_m8_drp_drc",
+    "--qsts-backend",
+    "torch",
+    "--device",
+    "auto",
+    "--source-vm-pu",
+    "1.02"
+   ],
+   "estimate_min": 2,
+   "backend": "torch",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.02,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "D-simbench_lv_semiurb4-drp-drc",
+    "method": "qsts"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_urban6-drp-drc-src0.98",
+   "args": [
+    "--network",
+    "simbench_lv_urban6",
+    "--methods",
+    "qsts",
+    "--qsts-network-profiles",
+    "--qsts-start",
+    "2016-01-04",
+    "--qsts-days",
+    "357",
+    "--qsts-criterion",
+    "prodist_m8_drp_drc",
+    "--qsts-backend",
+    "torch",
+    "--device",
+    "auto",
+    "--source-vm-pu",
+    "0.98"
+   ],
+   "estimate_min": 2,
+   "backend": "torch",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 0.98,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "D-simbench_lv_urban6-drp-drc",
+    "method": "qsts"
+   }
+  },
+  {
+   "group": "H_source_voltage",
+   "name": "H-simbench_lv_urban6-drp-drc-src1.02",
+   "args": [
+    "--network",
+    "simbench_lv_urban6",
+    "--methods",
+    "qsts",
+    "--qsts-network-profiles",
+    "--qsts-start",
+    "2016-01-04",
+    "--qsts-days",
+    "357",
+    "--qsts-criterion",
+    "prodist_m8_drp_drc",
+    "--qsts-backend",
+    "torch",
+    "--device",
+    "auto",
+    "--source-vm-pu",
+    "1.02"
+   ],
+   "estimate_min": 2,
+   "backend": "torch",
+   "factor": {
+    "name": "source_vm_pu",
+    "value": 1.02,
+    "base_value": "network default"
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "D-simbench_lv_urban6-drp-drc",
+    "method": "qsts"
+   }
+  },
+  {
+   "group": "I_resolution",
+   "name": "I-simbench_lv_rural1-drp-drc-block30",
+   "args": [
+    "--network",
+    "simbench_lv_rural1",
+    "--methods",
+    "qsts",
+    "--qsts-network-profiles",
+    "--qsts-start",
+    "2016-01-04",
+    "--qsts-days",
+    "357",
+    "--qsts-criterion",
+    "prodist_m8_drp_drc",
+    "--qsts-backend",
+    "torch",
+    "--device",
+    "auto",
+    "--qsts-block-average",
+    "30"
+   ],
+   "estimate_min": 2,
+   "backend": "torch",
+   "factor": {
+    "name": "block_average_min",
+    "value": 30,
+    "base_value": 15
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "D-simbench_lv_rural1-drp-drc",
+    "method": "qsts"
+   }
+  },
+  {
+   "group": "I_resolution",
+   "name": "I-simbench_lv_semiurb4-drp-drc-block30",
+   "args": [
+    "--network",
+    "simbench_lv_semiurb4",
+    "--methods",
+    "qsts",
+    "--qsts-network-profiles",
+    "--qsts-start",
+    "2016-01-04",
+    "--qsts-days",
+    "357",
+    "--qsts-criterion",
+    "prodist_m8_drp_drc",
+    "--qsts-backend",
+    "torch",
+    "--device",
+    "auto",
+    "--qsts-block-average",
+    "30"
+   ],
+   "estimate_min": 2,
+   "backend": "torch",
+   "factor": {
+    "name": "block_average_min",
+    "value": 30,
+    "base_value": 15
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "D-simbench_lv_semiurb4-drp-drc",
+    "method": "qsts"
+   }
+  },
+  {
+   "group": "I_resolution",
+   "name": "I-simbench_lv_urban6-drp-drc-block30",
+   "args": [
+    "--network",
+    "simbench_lv_urban6",
+    "--methods",
+    "qsts",
+    "--qsts-network-profiles",
+    "--qsts-start",
+    "2016-01-04",
+    "--qsts-days",
+    "357",
+    "--qsts-criterion",
+    "prodist_m8_drp_drc",
+    "--qsts-backend",
+    "torch",
+    "--device",
+    "auto",
+    "--qsts-block-average",
+    "30"
+   ],
+   "estimate_min": 2,
+   "backend": "torch",
+   "factor": {
+    "name": "block_average_min",
+    "value": 30,
+    "base_value": 15
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "D-simbench_lv_urban6-drp-drc",
+    "method": "qsts"
+   }
+  },
+  {
+   "group": "I_resolution",
+   "name": "I-london-5min-drp-drc-block10",
+   "args": [
+    "--network",
+    "cigre_lv",
+    "--qsts-series",
+    "data/series/london_2018_06_5min.parquet",
+    "--methods",
+    "qsts",
+    "--qsts-criterion",
+    "prodist_m8_drp_drc",
+    "--qsts-backend",
+    "torch",
+    "--device",
+    "auto",
+    "--qsts-block-average",
+    "10"
+   ],
+   "estimate_min": 2,
+   "backend": "torch",
+   "factor": {
+    "name": "block_average_min",
+    "value": 10,
+    "base_value": 10
+   },
+   "baseline": null,
+   "requires": [
+    "data/series/london_2018_06_5min.parquet"
+   ]
+  },
+  {
+   "group": "I_resolution",
+   "name": "I-london-5min-drp-drc-block15",
+   "args": [
+    "--network",
+    "cigre_lv",
+    "--qsts-series",
+    "data/series/london_2018_06_5min.parquet",
+    "--methods",
+    "qsts",
+    "--qsts-criterion",
+    "prodist_m8_drp_drc",
+    "--qsts-backend",
+    "torch",
+    "--device",
+    "auto",
+    "--qsts-block-average",
+    "15"
+   ],
+   "estimate_min": 2,
+   "backend": "torch",
+   "factor": {
+    "name": "block_average_min",
+    "value": 15,
+    "base_value": 10
+   },
+   "baseline": {
+    "protocol": "protocol-v3",
+    "run": "I-london-5min-drp-drc-block10",
+    "method": "qsts"
+   },
+   "requires": [
+    "data/series/london_2018_06_5min.parquet"
+   ]
+  },
+  {
+   "group": "I_resolution",
+   "name": "I-london-5min-drp-drc-block30",
+   "args": [
+    "--network",
+    "cigre_lv",
+    "--qsts-series",
+    "data/series/london_2018_06_5min.parquet",
+    "--methods",
+    "qsts",
+    "--qsts-criterion",
+    "prodist_m8_drp_drc",
+    "--qsts-backend",
+    "torch",
+    "--device",
+    "auto",
+    "--qsts-block-average",
+    "30"
+   ],
+   "estimate_min": 2,
+   "backend": "torch",
+   "factor": {
+    "name": "block_average_min",
+    "value": 30,
+    "base_value": 10
+   },
+   "baseline": {
+    "protocol": "protocol-v3",
+    "run": "I-london-5min-drp-drc-block10",
+    "method": "qsts"
+   },
+   "requires": [
+    "data/series/london_2018_06_5min.parquet"
+   ]
+  },
+  {
+   "group": "I_resolution",
+   "name": "I-london-5min-drp-drc-block60",
+   "args": [
+    "--network",
+    "cigre_lv",
+    "--qsts-series",
+    "data/series/london_2018_06_5min.parquet",
+    "--methods",
+    "qsts",
+    "--qsts-criterion",
+    "prodist_m8_drp_drc",
+    "--qsts-backend",
+    "torch",
+    "--device",
+    "auto",
+    "--qsts-block-average",
+    "60"
+   ],
+   "estimate_min": 2,
+   "backend": "torch",
+   "factor": {
+    "name": "block_average_min",
+    "value": 60,
+    "base_value": 10
+   },
+   "baseline": {
+    "protocol": "protocol-v3",
+    "run": "I-london-5min-drp-drc-block10",
+    "method": "qsts"
+   },
+   "requires": [
+    "data/series/london_2018_06_5min.parquet"
+   ]
+  },
+  {
+   "group": "J_adoption",
+   "name": "J-cigre_lv-prodist-adopt0.1-0.4",
+   "args": [
+    "--network",
+    "cigre_lv",
+    "--methods",
+    "stochastic",
+    "--framework",
+    "prodist_m8_bt",
+    "--mc-n-scenarios",
+    "60",
+    "--mc-adoption-min",
+    "0.1",
+    "--mc-adoption-max",
+    "0.4"
+   ],
+   "estimate_min": 3,
+   "backend": "pandapower",
+   "factor": {
+    "name": "adoption_fraction",
+    "value": [
+     0.1,
+     0.4
+    ],
+    "base_value": [
+     0.3,
+     1.0
+    ]
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "C-cigre_lv-prodist",
+    "method": "stochastic"
+   }
+  },
+  {
+   "group": "J_adoption",
+   "name": "J-cigre_lv-prodist-adopt0.7-1.0",
+   "args": [
+    "--network",
+    "cigre_lv",
+    "--methods",
+    "stochastic",
+    "--framework",
+    "prodist_m8_bt",
+    "--mc-n-scenarios",
+    "60",
+    "--mc-adoption-min",
+    "0.7",
+    "--mc-adoption-max",
+    "1.0"
+   ],
+   "estimate_min": 3,
+   "backend": "pandapower",
+   "factor": {
+    "name": "adoption_fraction",
+    "value": [
+     0.7,
+     1.0
+    ],
+    "base_value": [
+     0.3,
+     1.0
+    ]
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "C-cigre_lv-prodist",
+    "method": "stochastic"
+   }
+  },
+  {
+   "group": "J_adoption",
+   "name": "J-cigre_lv-prodist-n200",
+   "args": [
+    "--network",
+    "cigre_lv",
+    "--methods",
+    "stochastic",
+    "--framework",
+    "prodist_m8_bt",
+    "--mc-n-scenarios",
+    "200"
+   ],
+   "estimate_min": 10,
+   "backend": "pandapower",
+   "factor": {
+    "name": "n_scenarios",
+    "value": 200,
+    "base_value": 60
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "C-cigre_lv-prodist",
+    "method": "stochastic"
+   }
+  },
+  {
+   "group": "J_adoption",
+   "name": "J-simbench_lv_rural1-prodist-adopt0.1-0.4",
+   "args": [
+    "--network",
+    "simbench_lv_rural1",
+    "--methods",
+    "stochastic",
+    "--framework",
+    "prodist_m8_bt",
+    "--mc-n-scenarios",
+    "60",
+    "--mc-adoption-min",
+    "0.1",
+    "--mc-adoption-max",
+    "0.4"
+   ],
+   "estimate_min": 3,
+   "backend": "pandapower",
+   "factor": {
+    "name": "adoption_fraction",
+    "value": [
+     0.1,
+     0.4
+    ],
+    "base_value": [
+     0.3,
+     1.0
+    ]
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "C-simbench_lv_rural1-prodist",
+    "method": "stochastic"
+   }
+  },
+  {
+   "group": "J_adoption",
+   "name": "J-simbench_lv_rural1-prodist-adopt0.7-1.0",
+   "args": [
+    "--network",
+    "simbench_lv_rural1",
+    "--methods",
+    "stochastic",
+    "--framework",
+    "prodist_m8_bt",
+    "--mc-n-scenarios",
+    "60",
+    "--mc-adoption-min",
+    "0.7",
+    "--mc-adoption-max",
+    "1.0"
+   ],
+   "estimate_min": 3,
+   "backend": "pandapower",
+   "factor": {
+    "name": "adoption_fraction",
+    "value": [
+     0.7,
+     1.0
+    ],
+    "base_value": [
+     0.3,
+     1.0
+    ]
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "C-simbench_lv_rural1-prodist",
+    "method": "stochastic"
+   }
+  },
+  {
+   "group": "J_adoption",
+   "name": "J-simbench_lv_rural1-prodist-n200",
+   "args": [
+    "--network",
+    "simbench_lv_rural1",
+    "--methods",
+    "stochastic",
+    "--framework",
+    "prodist_m8_bt",
+    "--mc-n-scenarios",
+    "200"
+   ],
+   "estimate_min": 10,
+   "backend": "pandapower",
+   "factor": {
+    "name": "n_scenarios",
+    "value": 200,
+    "base_value": 60
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "C-simbench_lv_rural1-prodist",
+    "method": "stochastic"
+   }
+  },
+  {
+   "group": "J_adoption",
+   "name": "J-simbench_lv_semiurb4-prodist-adopt0.1-0.4",
+   "args": [
+    "--network",
+    "simbench_lv_semiurb4",
+    "--methods",
+    "stochastic",
+    "--framework",
+    "prodist_m8_bt",
+    "--mc-n-scenarios",
+    "60",
+    "--mc-adoption-min",
+    "0.1",
+    "--mc-adoption-max",
+    "0.4"
+   ],
+   "estimate_min": 3,
+   "backend": "pandapower",
+   "factor": {
+    "name": "adoption_fraction",
+    "value": [
+     0.1,
+     0.4
+    ],
+    "base_value": [
+     0.3,
+     1.0
+    ]
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "C-simbench_lv_semiurb4-prodist",
+    "method": "stochastic"
+   }
+  },
+  {
+   "group": "J_adoption",
+   "name": "J-simbench_lv_semiurb4-prodist-adopt0.7-1.0",
+   "args": [
+    "--network",
+    "simbench_lv_semiurb4",
+    "--methods",
+    "stochastic",
+    "--framework",
+    "prodist_m8_bt",
+    "--mc-n-scenarios",
+    "60",
+    "--mc-adoption-min",
+    "0.7",
+    "--mc-adoption-max",
+    "1.0"
+   ],
+   "estimate_min": 3,
+   "backend": "pandapower",
+   "factor": {
+    "name": "adoption_fraction",
+    "value": [
+     0.7,
+     1.0
+    ],
+    "base_value": [
+     0.3,
+     1.0
+    ]
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "C-simbench_lv_semiurb4-prodist",
+    "method": "stochastic"
+   }
+  },
+  {
+   "group": "J_adoption",
+   "name": "J-simbench_lv_semiurb4-prodist-n200",
+   "args": [
+    "--network",
+    "simbench_lv_semiurb4",
+    "--methods",
+    "stochastic",
+    "--framework",
+    "prodist_m8_bt",
+    "--mc-n-scenarios",
+    "200"
+   ],
+   "estimate_min": 10,
+   "backend": "pandapower",
+   "factor": {
+    "name": "n_scenarios",
+    "value": 200,
+    "base_value": 60
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "C-simbench_lv_semiurb4-prodist",
+    "method": "stochastic"
+   }
+  },
+  {
+   "group": "J_adoption",
+   "name": "J-simbench_lv_urban6-prodist-adopt0.1-0.4",
+   "args": [
+    "--network",
+    "simbench_lv_urban6",
+    "--methods",
+    "stochastic",
+    "--framework",
+    "prodist_m8_bt",
+    "--mc-n-scenarios",
+    "60",
+    "--mc-adoption-min",
+    "0.1",
+    "--mc-adoption-max",
+    "0.4"
+   ],
+   "estimate_min": 3,
+   "backend": "pandapower",
+   "factor": {
+    "name": "adoption_fraction",
+    "value": [
+     0.1,
+     0.4
+    ],
+    "base_value": [
+     0.3,
+     1.0
+    ]
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "C-simbench_lv_urban6-prodist",
+    "method": "stochastic"
+   }
+  },
+  {
+   "group": "J_adoption",
+   "name": "J-simbench_lv_urban6-prodist-adopt0.7-1.0",
+   "args": [
+    "--network",
+    "simbench_lv_urban6",
+    "--methods",
+    "stochastic",
+    "--framework",
+    "prodist_m8_bt",
+    "--mc-n-scenarios",
+    "60",
+    "--mc-adoption-min",
+    "0.7",
+    "--mc-adoption-max",
+    "1.0"
+   ],
+   "estimate_min": 3,
+   "backend": "pandapower",
+   "factor": {
+    "name": "adoption_fraction",
+    "value": [
+     0.7,
+     1.0
+    ],
+    "base_value": [
+     0.3,
+     1.0
+    ]
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "C-simbench_lv_urban6-prodist",
+    "method": "stochastic"
+   }
+  },
+  {
+   "group": "J_adoption",
+   "name": "J-simbench_lv_urban6-prodist-n200",
+   "args": [
+    "--network",
+    "simbench_lv_urban6",
+    "--methods",
+    "stochastic",
+    "--framework",
+    "prodist_m8_bt",
+    "--mc-n-scenarios",
+    "200"
+   ],
+   "estimate_min": 10,
+   "backend": "pandapower",
+   "factor": {
+    "name": "n_scenarios",
+    "value": 200,
+    "base_value": 60
+   },
+   "baseline": {
+    "protocol": "protocol-v2",
+    "run": "C-simbench_lv_urban6-prodist",
+    "method": "stochastic"
+   }
+  }
+ ]
+}
