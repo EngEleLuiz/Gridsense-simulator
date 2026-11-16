@@ -592,6 +592,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    choices=["zero_tolerance", *sorted(DURATION_CRITERIA)],
                    help="zero_tolerance: classic QSTS (first violating step). A duration criterion "
                         "(PRODIST DRP/DRC, EN 50160 weekly) evaluates week by week with PV attribution.")
+    p.add_argument("--require-verified-criterion", action="store_true",
+                   help="Refuse a duration --qsts-criterion that is still marked to_verify (its numbers "
+                        "have not been read in the primary source yet). For runs whose results are cited.")
     p.add_argument("--qsts-windows", type=int, nargs="+", default=None,
                    help="Duration criteria only: compliance windows (weeks) to evaluate; default all.")
     p.add_argument("--qsts-skip-night-baseline", action="store_true",
@@ -659,6 +662,10 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         (args.qsts_backend == "pandapower" or args.qsts_criterion != "zero_tolerance",
          "--qsts-backend torch needs a duration --qsts-criterion (prodist_m8_zero_tolerance for tau = 0)"),
         (args.torch_memory_mb >= 16, "--torch-memory-mb must be >= 16"),
+        (not args.require_verified_criterion or args.qsts_criterion == "zero_tolerance"
+         or not DURATION_CRITERIA[args.qsts_criterion].to_verify,
+         f"--require-verified-criterion: '{args.qsts_criterion}' is still marked to_verify "
+         "(see its 'verification' note in duration.py or in the criterion file)"),
         (args.qsts_series is None or args.qsts_peak_load is None,
          "--qsts-peak-load does not apply to --qsts-series (the series is already normalised; "
          "use 'gridsense-data build-series --peak-load')"),

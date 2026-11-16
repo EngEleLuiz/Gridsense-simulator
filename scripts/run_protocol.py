@@ -19,6 +19,10 @@ Guarantees:
 * **Logs.** ``<output_dir>/_logs/<run>.log`` holds the full output.
 * **Integrity.** The protocol file's SHA-256 is recorded in every run
   marker; a changed protocol file is reported as a mismatch.
+* **Criteria.** ``--list`` names the runs whose duration criterion is still
+  marked ``to_verify`` (numbers not yet read in the primary source), every
+  run marker records it, and ``--require-verified-criteria`` refuses to
+  start while any selected run uses one.
 """
 
 from __future__ import annotations
@@ -52,6 +56,32 @@ def selected(runs: list[dict], patterns: list[str] | None) -> list[dict]:
     return [r for r in runs if any(fnmatch.fnmatch(r["group"], p) or fnmatch.fnmatch(r["name"], p) for p in patterns)]
 
 
+def criterion_of(run: dict) -> str | None:
+    """Name of the duration criterion a run evaluates, if any."""
+    args = run["args"]
+    if "--qsts-criterion" not in args:
+        return None
+    name = args[args.index("--qsts-criterion") + 1]
+    return None if name == "zero_tolerance" else name
+
+
+def unverified_criteria(runs: list[dict]) -> dict[str, str]:
+    """run name -> criterion, for runs whose duration criterion is still ``to_verify``."""
+    sys.path.insert(0, str(ROOT / "simulator"))
+    from gridsense_sim.hosting_capacity.duration import DURATION_CRITERIA, load_criterion_file
+
+    out: dict[str, str] = {}
+    for r in runs:
+        args = r["args"]
+        for i, a in enumerate(args):
+            if a == "--qsts-criterion-file":
+                load_criterion_file(ROOT / args[i + 1])
+        name = criterion_of(r)
+        if name and name in DURATION_CRITERIA and DURATION_CRITERIA[name].to_verify:
+            out[r["name"]] = name
+    return out
+
+
 def command(run: dict, protocol: dict, python: str) -> list[str]:
     out = ROOT / protocol["output_dir"]
     return [python, str(STUDY), *run["args"], "--output-dir", str(out),
@@ -66,6 +96,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true", help="Print the commands without running them.")
     p.add_argument("--allow-dirty", action="store_true", help="Run on a dirty git tree (recorded).")
     p.add_argument("--python", default=sys.executable, help="Interpreter for the study runner.")
+    p.add_argument("--require-verified-criteria", action="store_true",
+                   help="Refuse to run while a selected run uses a criterion still marked to_verify.")
     args = p.parse_args(argv)
 
     protocol, sha = load_protocol(Path(args.protocol))
@@ -84,7 +116,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{r['group']:24s} {r['name']:52s} ~{r['estimate_min']:>3d} min  {state}")
             total += 0 if done(r) else r["estimate_min"]
         print(f"\n{len(runs)} run(s); about {total / 60:.1f} h left. Protocol {protocol['id']} sha256 {sha[:12]}")
+        pending = unverified_criteria(runs)
+        if pending:
+            print(f"{len(pending)} run(s) use a criterion still marked to_verify: "
+                  f"{', '.join(sorted(set(pending.values())))}")
         return 0
+
+    to_verify = unverified_criteria(runs)
+    if to_verify and args.require_verified_criteria:
+        print("Refusing to run: criteria still marked to_verify: "
+              f"{', '.join(sorted(set(to_verify.values())))} (used by {len(to_verify)} run(s)). Read them in "
+              "the primary source and clear the flag, or drop --require-verified-criteria.", file=sys.stderr)
+        return 3
 
     dirty = bool(git("status", "--porcelain"))
     if dirty and not args.allow_dirty and not args.dry_run:
@@ -120,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
             "run": r["name"], "group": r["group"], "exit_code": code, "started_utc": started,
             "duration_s": round(dur, 1), "commit": commit, "git_dirty": dirty,
             "protocol_id": protocol["id"], "protocol_sha256": sha, "command": cmd[1:],
+            "criterion_to_verify": to_verify.get(r["name"]),
         }, indent=2), encoding="utf-8")
         status = "ok" if code == 0 else f"FAILED (exit {code}, see _logs/{r['name']}.log)"
         print(f"    {status} in {dur / 60:.1f} min", flush=True)

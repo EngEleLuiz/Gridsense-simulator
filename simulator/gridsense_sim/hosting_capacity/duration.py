@@ -76,6 +76,11 @@ class DurationCriterion:
             overload (0 = instantaneous thermal limit).
         reading_minutes: Length of one regulatory reading.
         window_days: Length of the compliance window.
+        reference: The regulation the numbers come from.
+        to_verify: ``True`` until every number has been read in the primary
+            source (the regulation itself, in the revision in force).
+        verification: What has been checked so far, against which document
+            and when. Free text, stored with every result.
     """
 
     name: str
@@ -92,6 +97,7 @@ class DurationCriterion:
     window_days: int = 7
     reference: str = ""
     to_verify: bool = False
+    verification: str = ""
 
     def __post_init__(self) -> None:
         if not (self.critical_lo_pu <= self.adequate_lo_pu < self.adequate_hi_pu <= self.critical_hi_pu):
@@ -132,6 +138,7 @@ DURATION_CRITERIA: dict[str, DurationCriterion] = {
                   "Each 168-h window must comply (eventual measurement); permanent measurement uses the "
                   "monthly mean of the windows (item 26.6), which is less strict",
         to_verify=True,  # only the precarious/critical edges remain unverified
+        verification="Band edges agree with the ARSESP guide 'Conformidade dos Niveis de Tensao de Fornecimento' (Sao Paulo state regulator, citing PRODIST Module 8 without a revision number; read 2026-11-15): 220 V adequate 202-231, precarious 191-202 and 231-233, critical outside; DRP 3 %, DRC 0.5 %, 1008 readings. Primary source (Annex VIII of REN 956/2021, voltage table for 220/127 V) not read yet",
     ),
     "en50160_weekly": DurationCriterion(
         name="en50160_weekly",
@@ -142,6 +149,7 @@ DURATION_CRITERIA: dict[str, DurationCriterion] = {
         reference="EN 50160: 95 % of weekly 10-min means within Un +-10 %, all within +10 %/-15 % "
                   "(upper side: no 10-min mean above +10 %)",
         to_verify=True,
+        verification="Not checked against the text of EN 50160 (the standard is not open access)",
     ),
     "prodist_m8_zero_tolerance": DurationCriterion(
         name="prodist_m8_zero_tolerance",
@@ -152,6 +160,7 @@ DURATION_CRITERIA: dict[str, DurationCriterion] = {
         reference="PRODIST adequate band with no duration allowance (tau_bar = 0): the "
                   "zero-tolerance reference for measuring what the duration criterion changes",
         to_verify=True,
+        verification="Same adequate band as prodist_m8_drp_drc (202-231 V), see there",
     ),
 }
 
@@ -186,6 +195,11 @@ def register_criterion(criterion: DurationCriterion, *, replace: bool = False) -
         raise ValueError(f"Criterion {criterion.name!r} is already registered with different values.")
     DURATION_CRITERIA[criterion.name] = criterion
     return criterion
+
+
+def unverified(names) -> list[str]:
+    """The criteria among ``names`` that are still marked ``to_verify`` (sorted, unique)."""
+    return sorted({n for n in names if n in DURATION_CRITERIA and DURATION_CRITERIA[n].to_verify})
 
 
 def load_criterion_file(path: str | Path) -> list[DurationCriterion]:
@@ -282,5 +296,6 @@ def weekly_capacity(th: WeekThresholds, criterion: DurationCriterion) -> WeeklyO
 
 __all__ = [
     "DURATION_CRITERIA", "DurationCriterion", "EventKind", "WeekThresholds", "WeeklyOutcome",
-    "criterion_from_dict", "get_criterion", "load_criterion_file", "register_criterion", "weekly_capacity",
+    "criterion_from_dict", "get_criterion", "load_criterion_file", "register_criterion", "unverified",
+    "weekly_capacity",
 ]

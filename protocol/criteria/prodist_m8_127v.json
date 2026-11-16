@@ -11,6 +11,7 @@
   "thermal_max": 0.0,
   "reading_minutes": 10,
   "window_days": 7,
-  "reference": "ANEEL PRODIST Module 8, 127 V phase-neutral base (220/127 V systems): adequate 117-133 V, precarious 110-117 V and 133-135 V, critical outside; DRP <= 3 %, DRC <= 0.5 %. Band edges written from memory of the Module 8 table: check them against the revision in force before citing.",
-  "to_verify": true
+  "reference": "ANEEL PRODIST Module 8, 127 V phase-neutral base (220/127 V systems): adequate 117-133 V, precarious 110-117 V and 133-135 V, critical outside; DRP <= 3 %, DRC <= 0.5 %.",
+  "to_verify": true,
+  "verification": "Band edges agree with the ARSESP guide 'Conformidade dos Niveis de Tensao de Fornecimento' (Sao Paulo state regulator, citing PRODIST Module 8 without a revision number; read 2026-11-15). Primary source (Annex VIII of REN 956/2021, voltage table for 220/127 V) not read yet"
 }
