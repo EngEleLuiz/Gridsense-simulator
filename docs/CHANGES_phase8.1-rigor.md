@@ -19,6 +19,9 @@ untouched.
 | `scripts/build_sensitivity_protocol.py`, `protocol/protocol-v3.json` | Sensitivity addendum: 70 runs, one factor each, each naming its base run. |
 | `gridsense_sim/validation/opendss.py`, `scripts/validate_against_opendss.py` | pandapower against OpenDSS: voltages, loadings and the capacity. |
 | `provenance.py` | Also records the versions of `torch`, `simbench` and `pyarrow`. |
+| `accel/solver.py` | `gpu_backend()` tells CUDA (NVIDIA) and ROCm (AMD) builds apart and `backend_info` records it with the HIP version; `GRIDSENSE_DEVICE` replaces `--device auto`, so a frozen protocol can be sent to the CPU or a chosen GPU without editing it. |
+| `scripts/check_environment.py` | Packages, PyTorch build, GPU visible, GPU equal to CPU in float64 (1e-10 pu), CPU/GPU timing and a device recommendation, protocol input files. |
+| `docs/SETUP.md` | A new machine from scratch, including AMD (ROCm on Windows 11) and NVIDIA GPUs. |
 | Repository | `CITATION.cff`; extras `plots` and `validation`; `make protocol-v3`, `series-london-5min`, `report`, `validate-opendss`, `env-lock`; CI installs both extras. |
 | Docs | `HYPOTHESES.md`, `VALIDATION.md`; protocol v3 in `EXPERIMENT_PROTOCOL.md`; threats table in `STUDY_DESIGN.md`. |
 

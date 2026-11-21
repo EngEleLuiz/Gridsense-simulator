@@ -99,7 +99,7 @@ def test_isolated_scope_bus_has_no_voltage() -> None:
 
 # ----------------------------------------------------------------- torch part
 torch = pytest.importorskip("torch")
-from gridsense_sim.accel.solver import BatchedSolver, device_info, resolve_device  # noqa: E402
+from gridsense_sim.accel.solver import BatchedSolver, device_info, gpu_backend, resolve_device  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -157,12 +157,28 @@ def test_device_resolution() -> None:
     assert resolve_device("cpu") == "cpu"
     assert resolve_device("auto") in ("cpu", "cuda")
     assert "torch" in device_info("cpu")
+    assert device_info("cpu")["gpu_backend"] == gpu_backend() in (None, "cuda", "rocm")
     if not torch.cuda.is_available():
         with pytest.raises(RuntimeError, match="no usable GPU"):
             resolve_device("cuda")
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="no CUDA device")
+def test_device_environment_variable(monkeypatch) -> None:
+    monkeypatch.setenv("GRIDSENSE_DEVICE", "cpu")
+    assert resolve_device("auto") == "cpu"
+    assert resolve_device("cpu") == "cpu"                       # an explicit device is never overridden
+    monkeypatch.setenv("GRIDSENSE_DEVICE", "auto")
+    assert resolve_device("auto") in ("cpu", "cuda")
+    monkeypatch.setenv("GRIDSENSE_DEVICE", "gpu")
+    with pytest.raises(ValueError, match="GRIDSENSE_DEVICE"):
+        resolve_device("auto")
+    if not torch.cuda.is_available():
+        monkeypatch.setenv("GRIDSENSE_DEVICE", "cuda")
+        with pytest.raises(RuntimeError, match="no usable GPU"):
+            resolve_device("auto")
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="no GPU (CUDA or ROCm build with a device)")
 def test_cuda_matches_cpu(cigre_solver) -> None:
     net, scope, alloc, model, solver = cigre_solver
     rng = np.random.default_rng(2)

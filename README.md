@@ -170,6 +170,8 @@ a plain table instead of a hypertable.
 
 ## Requirements
 
+A new machine, step by step (including AMD and NVIDIA GPUs): [`docs/SETUP.md`](docs/SETUP.md).
+
 - Docker + Docker Compose
 - Python 3.10+ (CI tests 3.10 and 3.12, on Linux and Windows)
 - `make` (Linux/macOS, or Git Bash on Windows) — optional; every target has a manual equivalent below

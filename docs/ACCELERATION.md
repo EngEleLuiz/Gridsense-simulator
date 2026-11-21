@@ -77,6 +77,39 @@ Use a Python version for which PyTorch publishes CUDA wheels for your platform
 PyTorch cannot see a GPU; `--device auto` silently falls back to the CPU and records
 the device that actually ran in `backend_info`.
 
+### AMD GPUs (ROCm)
+
+ROCm builds of PyTorch expose AMD GPUs through the same `torch.cuda` API, so the
+device is still called `cuda` and no code changes. `backend_info` records
+`gpu_backend: "rocm"` and the HIP version, so a result says which kind of GPU
+produced it.
+
+* **Windows 11:** AMD publishes PyTorch wheels for a short list of Radeon RX 7000 /
+  9000 cards and Ryzen AI APUs, with Python 3.12 and a matching Adrenalin driver.
+  Follow AMD's "PyTorch via PIP installation" page for Windows and the Windows
+  support matrix (both under rocm.docs.amd.com, "ROCm on Radeon and Ryzen"),
+  installing the ROCm SDK wheels and `torch` from `repo.radeon.com` **before** this
+  project. Cards outside the list (for example the RX 6000 series) are not supported
+  on Windows.
+* **Linux:** ROCm supports more cards; install the ROCm build of PyTorch following
+  the ROCm documentation for your distribution and card.
+
+Step-by-step instructions, including how to keep pip from replacing the ROCm build
+with a CPU one, are in [`SETUP.md`](SETUP.md).
+
+**Precision on consumer GPUs.** Reported results use `float64`. Consumer Radeon and
+GeForce cards execute `float64` at a small fraction of their `float32` rate, so on
+the small feeders of the panel a good CPU is often as fast. Measure before choosing:
+
+```
+python scripts/check_environment.py      # checks GPU == CPU in float64, times both, recommends a device
+```
+
+**Choosing the device for a frozen protocol.** The protocol runs ask for
+`--device auto`. Set `GRIDSENSE_DEVICE=cpu` (or `cuda`, `cuda:1`) to send them to a
+chosen device without editing the protocol file, whose hash is recorded with every
+result. An explicit `--device` on the command line always wins.
+
 ## Benchmark
 
 ```

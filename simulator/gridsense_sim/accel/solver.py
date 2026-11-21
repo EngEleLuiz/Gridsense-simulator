@@ -27,6 +27,7 @@ for reported results.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -39,32 +40,64 @@ except ImportError:  # pragma: no cover - exercised only without the extra
     torch = None
 
 INSTALL_HINT = ('The batched solver needs PyTorch: pip install -e "simulator[gpu]" '
-                "(see docs/ACCELERATION.md for the CUDA build).")
+                "(see docs/ACCELERATION.md for the CUDA and ROCm builds).")
 
 
 def torch_available() -> bool:
     return torch is not None
 
 
+def gpu_backend() -> str | None:
+    """``"cuda"`` (NVIDIA), ``"rocm"`` (AMD) or ``None`` for a CPU-only build of PyTorch.
+
+    ROCm builds of PyTorch expose AMD GPUs through the ``torch.cuda`` API and the
+    ``"cuda"`` device name, so the rest of the code needs no change; only the
+    build differs, and it is recorded with every result.
+    """
+    if torch is None:
+        return None
+    if getattr(torch.version, "hip", None):
+        return "rocm"
+    if getattr(torch.version, "cuda", None):
+        return "cuda"
+    return None
+
+
+DEVICE_ENV = "GRIDSENSE_DEVICE"
+
+
 def resolve_device(device: str = "auto") -> str:
-    """``auto`` -> ``cuda`` when a GPU is usable, else ``cpu``."""
+    """``auto`` -> ``cuda`` when a GPU is usable (NVIDIA or AMD), else ``cpu``.
+
+    The environment variable ``GRIDSENSE_DEVICE`` (``cpu``, ``cuda``, ``cuda:1``...)
+    replaces ``auto``, so a frozen protocol, whose runs ask for ``auto``, can be
+    sent to a chosen device without editing the protocol file. An explicit device
+    always wins. The device that actually ran is recorded in ``backend_info``.
+    """
     if torch is None:
         raise ImportError(INSTALL_HINT)
     if device == "auto":
+        override = os.environ.get(DEVICE_ENV, "").strip()
+        if override and override != "auto":
+            if override != "cpu" and not override.startswith("cuda"):
+                raise ValueError(f"{DEVICE_ENV}={override!r}: expected cpu, cuda or cuda:<index>.")
+            return resolve_device(override)
         return "cuda" if torch.cuda.is_available() else "cpu"
     if device.startswith("cuda") and not torch.cuda.is_available():
-        raise RuntimeError("device='cuda' requested but PyTorch reports no usable GPU "
-                           "(torch.cuda.is_available() is False). Install a CUDA build of PyTorch "
-                           "or use --device cpu.")
+        build = gpu_backend() or "CPU-only"
+        raise RuntimeError(f"device='cuda' requested but PyTorch ({torch.__version__}, {build} build) reports "
+                           "no usable GPU (torch.cuda.is_available() is False). NVIDIA needs a CUDA build, "
+                           "AMD a ROCm build of PyTorch (docs/ACCELERATION.md); or use --device cpu.")
     return device
 
 
 def device_info(device: str) -> dict:
     """What ran the study, for provenance."""
-    info = {"torch": torch.__version__, "device": device}
+    info = {"torch": torch.__version__, "device": device, "gpu_backend": gpu_backend()}
     if device.startswith("cuda"):
         info["gpu"] = torch.cuda.get_device_name(torch.device(device))
         info["cuda"] = torch.version.cuda
+        info["hip"] = getattr(torch.version, "hip", None)
     else:
         info["threads"] = torch.get_num_threads()
     return info
@@ -185,4 +218,5 @@ class BatchedSolver:
                 (i_line * self.line_scale).double().cpu().numpy(), i_trafo.double().cpu().numpy(), it)
 
 
-__all__ = ["BatchResult", "BatchedSolver", "INSTALL_HINT", "device_info", "resolve_device", "torch_available"]
+__all__ = ["BatchResult", "BatchedSolver", "DEVICE_ENV", "INSTALL_HINT", "device_info", "gpu_backend", "resolve_device",
+           "torch_available"]
