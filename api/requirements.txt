@@ -2,5 +2,5 @@
 # Test tooling lives in requirements-dev.txt.
 fastapi>=0.162.2
 uvicorn[standard]>=0.54.0
-sqlalchemy>=2.1.8
+sqlalchemy>=2.1.9
 psycopg2-binary>=2.9.13
